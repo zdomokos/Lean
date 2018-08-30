@@ -275,6 +275,11 @@ namespace QuantConnect.AlgorithmFactory.Python.Wrappers
         public IFutureChainProvider FutureChainProvider => _baseAlgorithm.FutureChainProvider;
 
         /// <summary>
+        /// Gets the object store, used for persistence
+        /// </summary>
+        public IObjectStore ObjectStore => _baseAlgorithm.ObjectStore;
+
+        /// <summary>
         /// Algorithm start date for backtesting, set by the SetStartDate methods.
         /// </summary>
         public DateTime StartDate => _baseAlgorithm.StartDate;
@@ -866,5 +871,11 @@ namespace QuantConnect.AlgorithmFactory.Python.Wrappers
         /// </summary>
         /// <param name="slice">The Slice object</param>
         public void SetCurrentSlice(Slice slice) => _baseAlgorithm.SetCurrentSlice(slice);
+
+        /// <summary>
+        /// Sets the object store
+        /// </summary>
+        /// <param name="objectStore">The object store</param>
+        public void SetObjectStore(IObjectStore objectStore) => _baseAlgorithm.SetObjectStore(objectStore);
     }
 }

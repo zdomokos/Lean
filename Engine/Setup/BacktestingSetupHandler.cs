@@ -151,8 +151,9 @@ namespace QuantConnect.Lean.Engine.Setup
         /// <param name="resultHandler">The configured result handler</param>
         /// <param name="transactionHandler">The configurated transaction handler</param>
         /// <param name="realTimeHandler">The configured real time handler</param>
+        /// <param name="objectStore">The object store</param>
         /// <returns>Boolean true on successfully initializing the algorithm</returns>
-        public bool Setup(IAlgorithm algorithm, IBrokerage brokerage, AlgorithmNodePacket baseJob, IResultHandler resultHandler, ITransactionHandler transactionHandler, IRealTimeHandler realTimeHandler)
+        public bool Setup(IAlgorithm algorithm, IBrokerage brokerage, AlgorithmNodePacket baseJob, IResultHandler resultHandler, ITransactionHandler transactionHandler, IRealTimeHandler realTimeHandler, IObjectStore objectStore)
         {
             var job = baseJob as BacktestNodePacket;
             if (job == null)
@@ -199,6 +200,9 @@ namespace QuantConnect.Lean.Engine.Setup
 
                     // set the future chain provider
                     algorithm.SetFutureChainProvider(new CachingFutureChainProvider(new BacktestingFutureChainProvider()));
+
+                    // set the object store
+                    algorithm.SetObjectStore(objectStore);
 
                     //Initialise the algorithm, get the required data:
                     algorithm.Initialize();

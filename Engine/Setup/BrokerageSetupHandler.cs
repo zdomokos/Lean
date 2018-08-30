@@ -135,8 +135,9 @@ namespace QuantConnect.Lean.Engine.Setup
         /// <param name="resultHandler">The configured result handler</param>
         /// <param name="transactionHandler">The configurated transaction handler</param>
         /// <param name="realTimeHandler">The configured real time handler</param>
+        /// <param name="objectStore">The object store</param>
         /// <returns>True on successfully setting up the algorithm state, or false on error.</returns>
-        public bool Setup(IAlgorithm algorithm, IBrokerage brokerage, AlgorithmNodePacket job, IResultHandler resultHandler, ITransactionHandler transactionHandler, IRealTimeHandler realTimeHandler)
+        public bool Setup(IAlgorithm algorithm, IBrokerage brokerage, AlgorithmNodePacket job, IResultHandler resultHandler, ITransactionHandler transactionHandler, IRealTimeHandler realTimeHandler, IObjectStore objectStore)
         {
             // verify we were given the correct job packet type
             var liveJob = job as LiveNodePacket;
@@ -202,6 +203,9 @@ namespace QuantConnect.Lean.Engine.Setup
 
                         // set the future chain provider
                         algorithm.SetFutureChainProvider(new CachingFutureChainProvider(new LiveFutureChainProvider()));
+
+                        // set the object store
+                        algorithm.SetObjectStore(objectStore);
 
                         // If we're going to receive market data from IB,
                         // set the default subscription limit to 100,

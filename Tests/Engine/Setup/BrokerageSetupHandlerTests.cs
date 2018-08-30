@@ -113,6 +113,7 @@ namespace QuantConnect.Tests.Engine.Setup
             var resultHandler = new Mock<IResultHandler>();
             var transactionHandler = new Mock<ITransactionHandler>();
             var realTimeHandler = new Mock<IRealTimeHandler>();
+            var objectStore = new Mock<IObjectStore>();
             var brokerage = new Mock<IBrokerage>();
 
             brokerage.Setup(x => x.IsConnected).Returns(true);
@@ -125,7 +126,7 @@ namespace QuantConnect.Tests.Engine.Setup
             IBrokerageFactory factory;
             setupHandler.CreateBrokerage(job, algorithm, out factory);
 
-            var result = setupHandler.Setup(algorithm, brokerage.Object, job, resultHandler.Object, transactionHandler.Object, realTimeHandler.Object);
+            var result = setupHandler.Setup(algorithm, brokerage.Object, job, resultHandler.Object, transactionHandler.Object, realTimeHandler.Object, objectStore.Object);
 
             Assert.AreEqual(expected, result);
 
