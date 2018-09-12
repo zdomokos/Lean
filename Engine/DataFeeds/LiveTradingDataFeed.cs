@@ -52,7 +52,9 @@ namespace QuantConnect.Lean.Engine.DataFeeds
         // used to get current time
         private ITimeProvider _timeProvider;
         // used to keep time constant during a time sync iteration
-        private ManualTimeProvider _frontierTimeProvider;
+        private ITimeProvider _frontierTimeProvider;
+        // will be extracted out of here
+        private FrontierAwareTimeProvider _frontierAwareTimeProvider;
         private IDataProvider _dataProvider;
         private SingleEntryDataCacheProvider _dataCacheProvider;
 
@@ -101,11 +103,11 @@ namespace QuantConnect.Lean.Engine.DataFeeds
             _job = (LiveNodePacket) job;
             _resultHandler = resultHandler;
             _timeProvider = GetTimeProvider();
+            _frontierAwareTimeProvider = new FrontierAwareTimeProvider(_timeProvider);
+            _frontierTimeProvider = _frontierAwareTimeProvider.FrontierTimeProvider;
             _dataQueueHandler = GetDataQueueHandler();
             _dataProvider = dataProvider;
             _dataCacheProvider = new SingleEntryDataCacheProvider(dataProvider);
-
-            _frontierTimeProvider = new ManualTimeProvider(_timeProvider.GetUtcNow());
             _customExchange = new BaseDataExchange("CustomDataExchange") {SleepInterval = 10};
             // sleep is controlled on this exchange via the GetNextTicksEnumerator
             _exchange = new BaseDataExchange("DataQueueExchange"){SleepInterval = 0};
@@ -275,7 +277,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds
             // the last emit time, and if we pass this time, we'll emit even with no data
             var nextEmit = DateTime.MinValue;
 
-            var syncer = new SubscriptionSynchronizer(_universeSelection, _algorithm.TimeZone, _algorithm.Portfolio.CashBook, _frontierTimeProvider);
+            var syncer = new SubscriptionSynchronizer(_universeSelection, _algorithm.TimeZone, _algorithm.Portfolio.CashBook, _frontierAwareTimeProvider);
             syncer.SubscriptionFinished += (sender, subscription) =>
             {
                 RemoveSubscription(subscription.Configuration);
@@ -286,10 +288,6 @@ namespace QuantConnect.Lean.Engine.DataFeeds
             {
                 while (!_cancellationTokenSource.IsCancellationRequested)
                 {
-                    // perform sleeps to wake up on the second?
-                    _frontierUtc = _timeProvider.GetUtcNow();
-                    _frontierTimeProvider.SetCurrentTime(_frontierUtc);
-
                     // always wait for other thread to sync up
                     if (!_bridge.WaitHandle.WaitOne(Timeout.Infinite, _cancellationTokenSource.Token))
                     {
@@ -297,6 +295,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                     }
 
                     var timeSlice = syncer.Sync(Subscriptions);
+                    _frontierUtc = timeSlice.Time;
 
                     // check for cancellation
                     if (_cancellationTokenSource.IsCancellationRequested) return;
