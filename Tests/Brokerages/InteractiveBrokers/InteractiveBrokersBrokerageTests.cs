@@ -151,11 +151,9 @@ namespace QuantConnect.Tests.Brokerages.InteractiveBrokers
             var ib = _interactiveBrokersBrokerage;
             Assert.IsTrue(ib.IsConnected);
 
-            ib.ResetGatewayConnection();
+            ib.TriggerConnectionReset();
+            ib.CheckConnection(60000); // give it some time to reset, but not infinite
             Assert.IsTrue(InteractiveBrokersGatewayRunner.IsRunning());
-            Assert.IsTrue(ib.IsConnected);
-
-            ib.CheckIbGateway();
             Assert.IsTrue(ib.IsConnected);
         }
 
@@ -165,7 +163,7 @@ namespace QuantConnect.Tests.Brokerages.InteractiveBrokers
             var ib = _interactiveBrokersBrokerage;
             Assert.IsTrue(ib.IsConnected);
 
-            const int iterations = 2;
+            const int iterations = 3;
             for (var i = 0; i < iterations; i++)
             {
                 ib.Disconnect();
@@ -181,10 +179,11 @@ namespace QuantConnect.Tests.Brokerages.InteractiveBrokers
             var ib = _interactiveBrokersBrokerage;
             Assert.IsTrue(ib.IsConnected);
 
-            const int iterations = 2;
+            const int iterations = 5;
             for (var i = 0; i < iterations; i++)
             {
-                ib.ResetGatewayConnection();
+                ib.TriggerConnectionReset();
+                ib.CheckConnection(60000); // give it some time to reset, but not infinite
                 Assert.IsTrue(ib.IsConnected);
             }
         }
@@ -677,8 +676,7 @@ namespace QuantConnect.Tests.Brokerages.InteractiveBrokers
             var ib = _interactiveBrokersBrokerage;
             Assert.IsTrue(ib.IsConnected);
 
-            ib.Disconnect();
-            Assert.IsFalse(ib.IsConnected);
+            ib.TriggerConnectionReset();
 
             ib.GetCashBalance();
             Assert.IsTrue(ib.IsConnected);
@@ -690,8 +688,7 @@ namespace QuantConnect.Tests.Brokerages.InteractiveBrokers
             var ib = _interactiveBrokersBrokerage;
             Assert.IsTrue(ib.IsConnected);
 
-            ib.Disconnect();
-            Assert.IsFalse(ib.IsConnected);
+            ib.TriggerConnectionReset();
 
             ib.GetAccountHoldings();
             Assert.IsTrue(ib.IsConnected);
@@ -716,6 +713,5 @@ namespace QuantConnect.Tests.Brokerages.InteractiveBrokers
             Assert.Pass("The order was successfully filled!");
             return null;
         }
-
     }
 }
