@@ -274,32 +274,6 @@ namespace QuantConnect.Lean.Engine.DataFeeds
             return true;
         }
 
-        /// <summary>
-        /// Main routine for datafeed analysis.
-        /// </summary>
-        /// <remarks>This is a hot-thread and should be kept extremely lean. Modify with caution.</remarks>
-        public void Run()
-        {
-            try
-            {
-                _controller.WaitHandle.WaitOne();
-            }
-            catch (Exception err)
-            {
-                Log.Error("FileSystemDataFeed.Run(): Encountered an error: " + err.Message);
-                if (!_cancellationTokenSource.IsCancellationRequested)
-                {
-                    _cancellationTokenSource.Cancel();
-                }
-            }
-            finally
-            {
-                Log.Trace("FileSystemDataFeed.Run(): Ending Thread... ");
-                if (_controller != null) _controller.Dispose();
-                IsActive = false;
-            }
-        }
-
         private DateTime GetInitialFrontierTime()
         {
             var frontier = DateTime.MaxValue;
@@ -418,8 +392,14 @@ namespace QuantConnect.Lean.Engine.DataFeeds
         /// </summary>
         public void Exit()
         {
-            Log.Trace("FileSystemDataFeed.Exit(): Exit triggered.");
-            _cancellationTokenSource.Cancel();
+            if (IsActive)
+            {
+                Log.Trace("FileSystemDataFeed.Exit(): Exit triggered.");
+                _cancellationTokenSource.Cancel();
+                Log.Trace("FileSystemDataFeed.Exit(): Ending Thread... ");
+                if (_controller != null) _controller.Dispose();
+                IsActive = false;
+            }
         }
 
         /// <summary>
