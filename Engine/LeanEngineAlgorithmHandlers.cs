@@ -179,7 +179,9 @@ namespace QuantConnect.Lean.Engine
             var factorFileProviderTypeName = Config.Get("factor-file-provider", "LocalDiskFactorFileProvider");
             var dataProviderTypeName = Config.Get("data-provider", "DefaultDataProvider");
             var alphaHandlerTypeName = Config.Get("alpha-handler", "DefaultAlphaHandler");
-            var objectStoreTypeName = Config.Get("object-store", "LocalObjectStore");
+
+            // HACK -- TO BE REMOVED -- TESTING NEW IMPLEMENTATION
+            var objectStoreTypeName = Config.Get("object-store", "ApiObjectStore") ;
 
             return new LeanEngineAlgorithmHandlers(
                 composer.GetExportedValueByTypeName<IResultHandler>(resultHandlerTypeName),
