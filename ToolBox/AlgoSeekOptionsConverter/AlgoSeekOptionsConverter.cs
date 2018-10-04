@@ -76,15 +76,14 @@ namespace QuantConnect.ToolBox.AlgoSeekOptionsConverter
             Log.Trace("AlgoSeekOptionsConverter.Convert(): Loading {0} AlgoSeekOptionsReader for {1} ", compressedRawDatafiles.Count, _referenceDate);
 
             //Initialize parameters
-            var totalLinesProcessed = 0L;   
+            var totalLinesProcessed = 0L;
             var totalFiles = compressedRawDatafiles.Count;
             var totalFilesProcessed = 0;
             var start = DateTime.MinValue;
-
-            var random = new Random((int)DateTime.Now.Ticks);
-            var counter = 1;
+            
             foreach (var compressedRawDatafile in compressedRawDatafiles)
             {
+                var counter = 1;
                 var timer = DateTime.UtcNow;
                 var rawDataFile = new FileInfo(Path.Combine(_source, compressedRawDatafile.Name.Replace(".bz2", "")));
                 var decompressSuccessful = false;
@@ -107,7 +106,6 @@ namespace QuantConnect.ToolBox.AlgoSeekOptionsConverter
                 rawDatafiles.Add(rawDataFile);
             }
 
-            counter = 0;
             //Process each file massively in parallel.
             Parallel.ForEach(rawDatafiles, parallelOptionsProcessing, rawDataFile =>
             {
@@ -122,70 +120,61 @@ namespace QuantConnect.ToolBox.AlgoSeekOptionsConverter
                 // var symbolFilter = symbolFilterNames.SelectMany(name => new[] { name, name + "1", name + ".1" }).ToHashSet();
                 // var reader = new AlgoSeekOptionsReader(csvFile, _referenceDate, symbolFilter);
 
-                var reader = new ToolBox.AlgoSeekOptionsConverter.AlgoSeekOptionsReader(rawDataFile.FullName, _referenceDate, symbolFilter);
-                if (start == DateTime.MinValue)
+                using (var reader = new AlgoSeekOptionsReader(rawDataFile.FullName, _referenceDate, symbolFilter))
                 {
-                    start = DateTime.Now;
-                }
-
-                var flushStepInterval = 10 +
-                    (Interlocked.Increment(ref counter) % 6) - 3;
-                var flushStep = TimeSpan.FromMinutes(flushStepInterval);
-
-                if (reader.Current != null) // reader contains the data
-                {
-                    var previousFlush = reader.Current.Time.RoundDown(flushStep);
-
-                    do
+                    if (start == DateTime.MinValue)
                     {
-                        var tick = reader.Current as Tick;
-
-                        //If the next minute has clocked over; flush the consolidators; serialize and store data to disk.
-                        if (tick.Time.RoundDown(flushStep) > previousFlush)
-                        {
-                            previousFlush = WriteToDisk(processors, waitForFlush, tick.Time, flushStep);
-                            processors = new Processors();
-                        }
-
-                        //Add or create the consolidator-flush mechanism for symbol:
-                        List<AlgoSeekOptionsProcessor> symbolProcessors;
-                        if (!processors.TryGetValue(tick.Symbol, out symbolProcessors))
-                        {
-                            symbolProcessors = new List<AlgoSeekOptionsProcessor>(3)
-                                            {
-                                                new AlgoSeekOptionsProcessor(tick.Symbol, _referenceDate, TickType.Trade, _resolution, _destination),
-                                                new AlgoSeekOptionsProcessor(tick.Symbol, _referenceDate, TickType.Quote, _resolution, _destination),
-                                                new AlgoSeekOptionsProcessor(tick.Symbol, _referenceDate, TickType.OpenInterest, _resolution, _destination)
-                                            };
-
-                            processors[tick.Symbol] = symbolProcessors;
-                        }
-
-                        // Pass current tick into processor: enum 0 = trade; 1 = quote, , 2 = oi
-                        symbolProcessors[(int)tick.TickType].Process(tick);
-
-                        if (Interlocked.Increment(ref totalLinesProcessed) % 1000000m == 0)
-                        {
-                            Log.Trace("AlgoSeekOptionsConverter.Convert(): Processed {0,3}M ticks( {1}k / sec); Memory in use: {2} MB; Total progress: {3}%", Math.Round(totalLinesProcessed / 1000000m, 2), Math.Round(totalLinesProcessed / 1000L / (DateTime.Now - start).TotalSeconds), Process.GetCurrentProcess().WorkingSet64 / (1024 * 1024), 100 * totalFilesProcessed / totalFiles);
-                        }
-
+                        start = DateTime.Now;
                     }
-                    while (reader.MoveNext());
+                    var flushStep = TimeSpan.FromMinutes(10);
+                    if (reader.Current != null) // reader contains the data
+                    {
+                        var previousFlush = reader.Current.Time.RoundDown(flushStep);
+                        do
+                        {
+                            var tick = reader.Current as Tick;
+                            //If the next minute has clocked over; flush the consolidators; serialize and store data to disk.
+                            if (tick.Time.RoundDown(flushStep) > previousFlush)
+                            {
+                                previousFlush = WriteToDisk(processors, waitForFlush, tick.Time, flushStep);
+                                processors = new Processors();
+                            }
+                            //Add or create the consolidator-flush mechanism for symbol:
+                            List<AlgoSeekOptionsProcessor> symbolProcessors;
+                            if (!processors.TryGetValue(tick.Symbol, out symbolProcessors))
+                            {
+                                symbolProcessors = new List<AlgoSeekOptionsProcessor>(3)
+                                {
+                                    new AlgoSeekOptionsProcessor(tick.Symbol, _referenceDate, TickType.Trade, _resolution, _destination),
+                                    new AlgoSeekOptionsProcessor(tick.Symbol, _referenceDate, TickType.Quote, _resolution, _destination),
+                                    new AlgoSeekOptionsProcessor(tick.Symbol, _referenceDate, TickType.OpenInterest, _resolution, _destination)
+                                };
 
-                    Log.Trace("AlgoSeekOptionsConverter.Convert(): Performing final flush to disk... ");
-                    Flush(processors, DateTime.MaxValue, true);
-                    WriteToDisk(processors, waitForFlush, DateTime.MaxValue, flushStep, true);
+                                processors[tick.Symbol] = symbolProcessors;
+                            }
+                            // Pass current tick into processor: enum 0 = trade; 1 = quote, , 2 = oi
+                            symbolProcessors[(int)tick.TickType].Process(tick);
+                            if (Interlocked.Increment(ref totalLinesProcessed) % 1000000m == 0)
+                            {
+                                Log.Trace(
+                                    "AlgoSeekOptionsConverter.Convert(): Processed {0,3}M ticks( {1}k / sec); Memory in use: {2} MB; Total progress: {3}%",
+                                    Math.Round(totalLinesProcessed / 1000000m, 2),
+                                    Math.Round(totalLinesProcessed / 1000L / (DateTime.Now - start).TotalSeconds),
+                                    Process.GetCurrentProcess().WorkingSet64 / (1024 * 1024),
+                                    100 * totalFilesProcessed / totalFiles);
+                            }
 
-                    reader.Dispose();
+                        } while (reader.MoveNext());
+                        Log.Trace("AlgoSeekOptionsConverter.Convert(): Performing final flush to disk... ");
+                        Flush(processors, DateTime.MaxValue, true);
+                        WriteToDisk(processors, waitForFlush, DateTime.MaxValue, flushStep, true);
+                    }
                     Log.Trace("AlgoSeekOptionsConverter.Convert(): Cleaning up extracted options file {0}", rawDataFile.FullName);
                     rawDataFile.Delete();
                 }
-
                 processors = null;
-
                 Log.Trace("AlgoSeekOptionsConverter.Convert(): Finished processing file: " + rawDataFile);
                 Interlocked.Increment(ref totalFilesProcessed);
-
             });
         }
 
