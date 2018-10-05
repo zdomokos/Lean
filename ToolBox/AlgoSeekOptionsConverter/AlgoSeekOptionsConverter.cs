@@ -149,7 +149,6 @@ namespace QuantConnect.ToolBox.AlgoSeekOptionsConverter
                                     new AlgoSeekOptionsProcessor(tick.Symbol, _referenceDate, TickType.Quote, _resolution, _destination),
                                     new AlgoSeekOptionsProcessor(tick.Symbol, _referenceDate, TickType.OpenInterest, _resolution, _destination)
                                 };
-
                                 processors[tick.Symbol] = symbolProcessors;
                             }
                             // Pass current tick into processor: enum 0 = trade; 1 = quote, , 2 = oi
@@ -163,15 +162,14 @@ namespace QuantConnect.ToolBox.AlgoSeekOptionsConverter
                                     Process.GetCurrentProcess().WorkingSet64 / (1024 * 1024),
                                     100 * totalFilesProcessed / totalFiles);
                             }
-
                         } while (reader.MoveNext());
                         Log.Trace("AlgoSeekOptionsConverter.Convert(): Performing final flush to disk... ");
                         Flush(processors, DateTime.MaxValue, true);
                         WriteToDisk(processors, waitForFlush, DateTime.MaxValue, flushStep, true);
                     }
                     Log.Trace("AlgoSeekOptionsConverter.Convert(): Cleaning up extracted options file {0}", rawDataFile.FullName);
-                    rawDataFile.Delete();
                 }
+                rawDataFile.Delete();
                 processors = null;
                 Log.Trace("AlgoSeekOptionsConverter.Convert(): Finished processing file: " + rawDataFile);
                 Interlocked.Increment(ref totalFilesProcessed);
