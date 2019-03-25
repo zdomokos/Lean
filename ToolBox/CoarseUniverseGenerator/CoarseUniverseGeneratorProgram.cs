@@ -22,6 +22,7 @@ using System.Threading;
 using Ionic.Zip;
 using Newtonsoft.Json.Linq;
 using QuantConnect.Data.Auxiliary;
+using QuantConnect.Interfaces;
 using QuantConnect.Util;
 using Log = QuantConnect.Logging.Log;
 
@@ -72,16 +73,9 @@ namespace QuantConnect.ToolBox.CoarseUniverseGenerator
                 ignoreMaplessSymbols = jtoken.Value<bool>();
             }
 
-            if (config.TryGetValue("coarse-universe-generator-start-date", out jtoken))
-            {
-                string startDateStr = jtoken.Value<string>();
-                startDate = DateTime.ParseExact(startDateStr, "yyyyMMdd", null);
-                Log.Trace("Generating coarse data from {0}", startDate);
-            }
-
             do
             {
-                ProcessEquityDirectories(dataDirectory, ignoreMaplessSymbols, startDate);
+                ProcessEquityDirectories(dataDirectory, ignoreMaplessSymbols);
             }
             while (WaitUntilTimeInUpdateMode(updateMode, updateTime));
         }
@@ -107,7 +101,7 @@ namespace QuantConnect.ToolBox.CoarseUniverseGenerator
         /// </summary>
         /// <param name="dataDirectory">The Lean /Data directory</param>
         /// <param name="ignoreMaplessSymbols">Ignore symbols without a QuantQuote map file.</param>
-        public static void ProcessEquityDirectories(string dataDirectory, bool ignoreMaplessSymbols, DateTime? startDate)
+        public static IEnumerable<string> ProcessEquityDirectories(string dataDirectory, bool ignoreMaplessSymbols)
         {
             var exclusions = ReadExclusionsFile(ExclusionsFile);
 
@@ -122,8 +116,12 @@ namespace QuantConnect.ToolBox.CoarseUniverseGenerator
                     Directory.CreateDirectory(coarseFolder);
                 }
 
-                var lastProcessedDate = startDate ?? GetLastProcessedDate(coarseFolder);
-                ProcessDailyFolder(dailyFolder, coarseFolder, MapFileResolver.Create(mapFileFolder), exclusions, ignoreMaplessSymbols, lastProcessedDate);
+                var factorFileProvider = new LocalDiskFactorFileProvider();
+                var files = ProcessDailyFolder(dailyFolder, coarseFolder, MapFileResolver.Create(mapFileFolder), factorFileProvider, exclusions, ignoreMaplessSymbols);
+                foreach (var file in files)
+                {
+                    yield return file;
+                }
             }
         }
 
@@ -136,11 +134,11 @@ namespace QuantConnect.ToolBox.CoarseUniverseGenerator
         /// <param name="mapFileResolver"></param>
         /// <param name="exclusions">The symbols to be excluded from processing</param>
         /// <param name="ignoreMapless">Ignore the symbols without a map file.</param>
-        /// <param name="startDate">The starting date for processing</param>
         /// <param name="symbolResolver">Function used to provide symbol resolution. Default resolution uses the zip file name to resolve
         /// the symbol, specify null for this behavior.</param>
         /// <returns>A collection of the generated coarse files</returns>
-        public static ICollection<string> ProcessDailyFolder(string dailyFolder, string coarseFolder, MapFileResolver mapFileResolver, HashSet<string> exclusions, bool ignoreMapless, DateTime startDate, Func<string, string> symbolResolver = null)
+        public static ICollection<string> ProcessDailyFolder(string dailyFolder, string coarseFolder, MapFileResolver mapFileResolver, IFactorFileProvider factorFileProvider,
+            HashSet<string> exclusions, bool ignoreMapless, Func<string, string> symbolResolver = null)
         {
             const decimal scaleFactor = 10000m;
 
@@ -172,7 +170,6 @@ namespace QuantConnect.ToolBox.CoarseUniverseGenerator
             var fineFundamentalFolder = Path.Combine(fundamentalDirectoryInfo.FullName, "fine");
 
             var mapFileProvider = new LocalDiskMapFileProvider();
-            var factorFileProvider = new LocalDiskFactorFileProvider(mapFileProvider);
 
             // open up each daily file to get the values and append to the daily coarse files
             foreach (var file in Directory.EnumerateFiles(dailyFolder, "*.zip"))
@@ -224,9 +221,6 @@ namespace QuantConnect.ToolBox.CoarseUniverseGenerator
                             //20150625.csv
                             var csv = line.Split(',');
                             var date = DateTime.ParseExact(csv[0], DateFormat.TwelveCharacter, CultureInfo.InvariantCulture);
-
-                            // spin past old data
-                            if (date < startDate) continue;
 
                             if (ignoreMapless && !checkedForMapFile)
                             {

@@ -86,7 +86,7 @@ namespace QuantConnect.Tests.Algorithm
         }
 
         [Test]
-        public void RegistersIndicatorProperlyPython()
+        public void PlotAndRegistersIndicatorProperlyPython()
         {
             var expected = 0;
             PyObject indicator;
@@ -111,6 +111,7 @@ namespace QuantConnect.Tests.Algorithm
                     throw new NotSupportedException($"RegistersIndicatorProperlyPython(): Unsupported indicator data type: {indicatorTest.GetType()}");
                 }
                 Assert.DoesNotThrow(() => _algorithm.RegisterIndicator(_spy, indicator, Resolution.Minute));
+                Assert.DoesNotThrow(() => _algorithm.Plot(_spy.Value, indicator));
                 expected++;
 
                 var actual = _algorithm.SubscriptionManager.Subscriptions.FirstOrDefault().Consolidators.Count;
@@ -158,12 +159,21 @@ AddReference('QuantConnect.Lean.Engine')
 
 from System import *
 from QuantConnect import *
+from QuantConnect.Securities import *
 from QuantConnect.Algorithm import *
 from QuantConnect.Indicators import *
 from QuantConnect.Lean.Engine.DataFeeds import *
 
 algo = QCAlgorithm()
-algo.SubscriptionManager.SetDataManager(DataManager(None, UniverseSelection(None, algo), algo.Settings, algo.TimeKeeper))
+
+marketHoursDatabase = MarketHoursDatabase.FromDataFolder()
+symbolPropertiesDatabase = SymbolPropertiesDatabase.FromDataFolder()
+securityService =  SecurityService(algo.Portfolio.CashBook, marketHoursDatabase, symbolPropertiesDatabase, algo)
+algo.Securities.SetSecurityService(securityService)
+dataManager = DataManager(None, UniverseSelection(algo, securityService), algo, algo.TimeKeeper, marketHoursDatabase)
+algo.SubscriptionManager.SetDataManager(dataManager)
+
+
 forex = algo.AddForex('EURUSD', Resolution.Daily)
 indicator = IchimokuKinkoHyo('EURUSD', 9, 26, 26, 52, 26, 26)
 algo.RegisterIndicator(forex.Symbol, indicator, Resolution.Daily)";

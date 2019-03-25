@@ -59,10 +59,16 @@ namespace QuantConnect.Tests.Engine.DataFeeds.Enumerators.Factories
                         }))
                         .Verifiable();
 
-                var quoteCurrency = new Cash(CashBook.AccountCurrency, 0, 1);
+                var quoteCurrency = new Cash(Currencies.USD, 0, 1);
                 var exchangeHours = MarketHoursDatabase.FromDataFolder().GetExchangeHours(Market.USA, Symbols.SPY, SecurityType.Equity);
                 var config = new SubscriptionDataConfig(typeof(RestData), Symbols.SPY, Resolution.Second, TimeZones.NewYork, TimeZones.NewYork, false, false, false);
-                var security = new Equity(Symbols.SPY, exchangeHours, quoteCurrency, SymbolProperties.GetDefault(CashBook.AccountCurrency));
+                var security = new Equity(
+                    Symbols.SPY,
+                    exchangeHours,
+                    quoteCurrency,
+                    SymbolProperties.GetDefault(Currencies.USD),
+                    ErrorCurrencyConverter.Instance
+                );
                 var request = new SubscriptionRequest(false, null, security, config, _referenceUtc.AddSeconds(-1), _referenceUtc.AddDays(1));
 
                 var factory = new TestableLiveCustomDataSubscriptionEnumeratorFactory(_timeProvider, _dataSourceReader.Object);
@@ -127,10 +133,16 @@ namespace QuantConnect.Tests.Engine.DataFeeds.Enumerators.Factories
                     )
                     .Verifiable();
 
-                var quoteCurrency = new Cash(CashBook.AccountCurrency, 0, 1);
+                var quoteCurrency = new Cash(Currencies.USD, 0, 1);
                 var exchangeHours = MarketHoursDatabase.FromDataFolder().GetExchangeHours(Market.USA, Symbols.SPY, SecurityType.Equity);
                 var config = new SubscriptionDataConfig(typeof(RestCollectionData), Symbols.SPY, Resolution.Second, TimeZones.NewYork, TimeZones.NewYork, false, false, false);
-                var security = new Equity(Symbols.SPY, exchangeHours, quoteCurrency, SymbolProperties.GetDefault(CashBook.AccountCurrency));
+                var security = new Equity(
+                    Symbols.SPY,
+                    exchangeHours,
+                    quoteCurrency,
+                    SymbolProperties.GetDefault(Currencies.USD),
+                    ErrorCurrencyConverter.Instance
+                );
                 var request = new SubscriptionRequest(false, null, security, config, _referenceUtc.AddSeconds(-4), _referenceUtc.AddDays(1));
 
                 var factory = new TestableLiveCustomDataSubscriptionEnumeratorFactory(_timeProvider, _dataSourceReader.Object);
@@ -202,10 +214,16 @@ namespace QuantConnect.Tests.Engine.DataFeeds.Enumerators.Factories
                         }))
                     .Verifiable();
 
-                var quoteCurrency = new Cash(CashBook.AccountCurrency, 0, 1);
+                var quoteCurrency = new Cash(Currencies.USD, 0, 1);
                 var exchangeHours = MarketHoursDatabase.FromDataFolder().GetExchangeHours(Market.USA, Symbols.SPY, SecurityType.Equity);
                 var config = new SubscriptionDataConfig(typeof(RemoteFileData), Symbols.SPY, Resolution.Second, TimeZones.NewYork, TimeZones.NewYork, false, false, false);
-                var security = new Equity(Symbols.SPY, exchangeHours, quoteCurrency, SymbolProperties.GetDefault(CashBook.AccountCurrency));
+                var security = new Equity(
+                    Symbols.SPY,
+                    exchangeHours,
+                    quoteCurrency,
+                    SymbolProperties.GetDefault(Currencies.USD),
+                    ErrorCurrencyConverter.Instance
+                );
                 var request = new SubscriptionRequest(false, null, security, config, _referenceUtc.AddSeconds(-6), _referenceUtc.AddDays(1));
 
                 var factory = new TestableLiveCustomDataSubscriptionEnumeratorFactory(_timeProvider, _dataSourceReader.Object);
@@ -272,10 +290,16 @@ namespace QuantConnect.Tests.Engine.DataFeeds.Enumerators.Factories
                         }))
                     .Verifiable();
 
-                var quoteCurrency = new Cash(CashBook.AccountCurrency, 0, 1);
+                var quoteCurrency = new Cash(Currencies.USD, 0, 1);
                 var exchangeHours = MarketHoursDatabase.FromDataFolder().GetExchangeHours(Market.USA, Symbols.SPY, SecurityType.Equity);
                 var config = new SubscriptionDataConfig(typeof(RemoteFileData), Symbols.SPY, Resolution.Daily, TimeZones.NewYork, TimeZones.NewYork, false, false, false);
-                var security = new Equity(Symbols.SPY, exchangeHours, quoteCurrency, SymbolProperties.GetDefault(CashBook.AccountCurrency));
+                var security = new Equity(
+                    Symbols.SPY,
+                    exchangeHours,
+                    quoteCurrency,
+                    SymbolProperties.GetDefault(Currencies.USD),
+                    ErrorCurrencyConverter.Instance
+                );
                 var request = new SubscriptionRequest(false, null, security, config, _referenceUtc.AddDays(-2), _referenceUtc.AddDays(1));
 
                 var factory = new TestableLiveCustomDataSubscriptionEnumeratorFactory(_timeProvider, _dataSourceReader.Object);

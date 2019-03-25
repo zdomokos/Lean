@@ -43,7 +43,7 @@ namespace QuantConnect.Interfaces
     /// Interface for QuantConnect algorithm implementations. All algorithms must implement these
     /// basic members to allow interaction with the Lean Backtesting Engine.
     /// </summary>
-    public interface IAlgorithm
+    public interface IAlgorithm : ISecurityInitializerProvider, IAccountCurrencyProvider
     {
         /// <summary>
         /// Event fired when an algorithm generates a insight
@@ -297,14 +297,6 @@ namespace QuantConnect.Interfaces
         }
 
         /// <summary>
-        /// Gets an instance that is to be used to initialize newly created securities.
-        /// </summary>
-        ISecurityInitializer SecurityInitializer
-        {
-            get;
-        }
-
-        /// <summary>
         /// Gets the Trade Builder to generate trades from executions
         /// </summary>
         ITradeBuilder TradeBuilder
@@ -335,6 +327,11 @@ namespace QuantConnect.Interfaces
         {
             get;
         }
+
+        /// <summary>
+        /// Returns the current Slice object
+        /// </summary>
+        Slice CurrentSlice { get; }
 
         /// <summary>
         /// Initialise the Algorithm and Prepare Required Data:
@@ -570,6 +567,14 @@ namespace QuantConnect.Interfaces
         bool RemoveSecurity(Symbol symbol);
 
         /// <summary>
+        /// Sets the account currency cash symbol this algorithm is to manage.
+        /// </summary>
+        /// <remarks>Has to be called during <see cref="Initialize"/> before
+        /// calling <see cref="SetCash(decimal)"/> or adding any <see cref="Security"/></remarks>
+        /// <param name="accountCurrency">The account currency cash symbol to set</param>
+        void SetAccountCurrency(string accountCurrency);
+
+        /// <summary>
         /// Set the starting capital for the strategy
         /// </summary>
         /// <param name="startingCash">decimal starting capital, default $100,000</param>
@@ -581,7 +586,7 @@ namespace QuantConnect.Interfaces
         /// <param name="symbol">The cash symbol to set</param>
         /// <param name="startingCash">Decimal cash value of portfolio</param>
         /// <param name="conversionRate">The current conversion rate for the</param>
-        void SetCash(string symbol, decimal startingCash, decimal conversionRate);
+        void SetCash(string symbol, decimal startingCash, decimal conversionRate = 0);
 
         /// <summary>
         /// Liquidate your portfolio holdings:

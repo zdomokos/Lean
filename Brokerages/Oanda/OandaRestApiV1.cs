@@ -32,6 +32,7 @@ using QuantConnect.Brokerages.Oanda.RestV1.Session;
 using QuantConnect.Data.Market;
 using QuantConnect.Logging;
 using QuantConnect.Orders;
+using QuantConnect.Orders.Fees;
 using QuantConnect.Securities;
 using Order = QuantConnect.Orders.Order;
 
@@ -93,15 +94,14 @@ namespace QuantConnect.Brokerages.Oanda
         /// Gets the current cash balance for each currency held in the brokerage account
         /// </summary>
         /// <returns>The current cash balance for each currency available for trading</returns>
-        public override List<Cash> GetCashBalance()
+        public override List<CashAmount> GetCashBalance()
         {
             var getAccountRequestString = EndpointResolver.ResolveEndpoint(Environment, Server.Account) + "accounts/" + AccountId;
             var accountResponse = MakeRequest<Account>(getAccountRequestString);
 
-            return new List<Cash>
+            return new List<CashAmount>
             {
-                new Cash(accountResponse.accountCurrency, accountResponse.balance.ToDecimal(),
-                    GetUsdConversion(accountResponse.accountCurrency))
+                new CashAmount(accountResponse.balance.ToDecimal(), accountResponse.accountCurrency)
             };
         }
 
@@ -135,7 +135,7 @@ namespace QuantConnect.Brokerages.Oanda
                 { "units", Convert.ToInt32(order.AbsoluteQuantity).ToString() }
             };
 
-            const int orderFee = 0;
+            var orderFee = OrderFee.Zero;
             var marketOrderFillQuantity = 0;
             var marketOrderRemainingQuantity = 0;
             decimal marketOrderFillPrice;
@@ -262,7 +262,10 @@ namespace QuantConnect.Brokerages.Oanda
             foreach (var orderId in order.BrokerId)
             {
                 CancelOrder(long.Parse(orderId));
-                OnOrderEvent(new OrderEvent(order, DateTime.UtcNow, 0, "Oanda Cancel Order Event") { Status = OrderStatus.Canceled });
+                OnOrderEvent(new OrderEvent(order,
+                    DateTime.UtcNow,
+                    OrderFee.Zero,
+                    "Oanda Cancel Order Event") { Status = OrderStatus.Canceled });
             }
 
             return true;
@@ -650,8 +653,7 @@ namespace QuantConnect.Brokerages.Oanda
                         {
                             order.PriceCurrency = SecurityProvider.GetSecurity(order.Symbol).SymbolProperties.QuoteCurrency;
 
-                            const int orderFee = 0;
-                            var fill = new OrderEvent(order, DateTime.UtcNow, orderFee, "Oanda Fill Event")
+                            var fill = new OrderEvent(order, DateTime.UtcNow, OrderFee.Zero, "Oanda Fill Event")
                             {
                                 Status = OrderStatus.Filled,
                                 FillPrice = (decimal)data.transaction.price,
@@ -838,7 +840,6 @@ namespace QuantConnect.Brokerages.Oanda
                 Symbol = SymbolMapper.GetLeanSymbol(position.instrument, securityType, Market.Oanda),
                 Type = securityType,
                 AveragePrice = (decimal)position.avgPrice,
-                ConversionRate = 1.0m,
                 CurrencySymbol = "$",
                 Quantity = position.side == "sell" ? -position.units : position.units
             };
@@ -942,7 +943,7 @@ namespace QuantConnect.Brokerages.Oanda
             else
             {
                 OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, "UpdateFailed", "Failed to update Oanda order id: " + orderId + "."));
-                OnOrderEvent(new OrderEvent(ConvertOrder(order), DateTime.UtcNow, 0)
+                OnOrderEvent(new OrderEvent(ConvertOrder(order), DateTime.UtcNow, OrderFee.Zero)
                 {
                     Status = OrderStatus.Invalid,
                     Message = string.Format("Order currently does not exist with order id: {0}.", orderId)

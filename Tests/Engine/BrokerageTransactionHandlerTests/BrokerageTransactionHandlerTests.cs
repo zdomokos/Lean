@@ -17,6 +17,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 using Moq;
 using NodaTime;
 using NUnit.Framework;
@@ -30,7 +31,6 @@ using QuantConnect.Orders;
 using QuantConnect.Securities;
 using QuantConnect.Data.Market;
 using QuantConnect.Interfaces;
-using QuantConnect.Packets;
 using QuantConnect.Tests.Engine.DataFeeds;
 using QuantConnect.Util;
 using HistoryRequest = QuantConnect.Data.HistoryRequest;
@@ -762,7 +762,7 @@ namespace QuantConnect.Tests.Engine.BrokerageTransactionHandlerTests
             var transactionHandler = new TestBrokerageTransactionHandler();
             var broker = new Mock<IBrokerage>();
 
-            broker.Setup(m => m.GetCashBalance()).Returns(new List<Cash> { new Cash("USD", 10, 10) });
+            broker.Setup(m => m.GetCashBalance()).Returns(new List<CashAmount> { new CashAmount(10, Currencies.USD) });
             transactionHandler.Initialize(_algorithm, broker.Object, new BacktestingResultHandler());
             _algorithm.SetLiveMode(true);
 
@@ -790,7 +790,7 @@ namespace QuantConnect.Tests.Engine.BrokerageTransactionHandlerTests
             var transactionHandler = new TestBrokerageTransactionHandler();
             var broker = new Mock<IBrokerage>();
 
-            broker.Setup(m => m.GetCashBalance()).Returns(new List<Cash> { new Cash("USD", 10, 10) });
+            broker.Setup(m => m.GetCashBalance()).Returns(new List<CashAmount> { new CashAmount(10, Currencies.USD) });
             transactionHandler.Initialize(_algorithm, broker.Object, new BacktestingResultHandler());
             _algorithm.SetLiveMode(true);
 
@@ -822,7 +822,7 @@ namespace QuantConnect.Tests.Engine.BrokerageTransactionHandlerTests
             var transactionHandler = new TestBrokerageTransactionHandler();
             var broker = new Mock<IBrokerage>();
 
-            broker.Setup(m => m.GetCashBalance()).Returns(new List<Cash> { new Cash("USD", 10, 10) });
+            broker.Setup(m => m.GetCashBalance()).Returns(new List<CashAmount> { new CashAmount(10, Currencies.USD) });
 
             // This is 2 am New York
             transactionHandler.TestCurrentTimeUtc = new DateTime(1, 1, 1, 7, 0, 0);
@@ -843,18 +843,124 @@ namespace QuantConnect.Tests.Engine.BrokerageTransactionHandlerTests
             broker.Verify(m => m.GetCashBalance(), Times.Exactly(0));
         }
 
-        internal class EmptyHistoryProvider : IHistoryProvider
+        [Test]
+        public void DoesNotLoopEndlesslyIfGetCashBalanceAlwaysThrows()
         {
-            public int DataPointCount
+            // simulate connect failure
+            var ib = new Mock<IBrokerage>();
+            ib.Setup(m => m.GetCashBalance()).Callback(() => { throw new Exception("Connection error in CashBalance"); });
+            ib.Setup(m => m.IsConnected).Returns(false);
+
+            var brokerage = ib.Object;
+            Assert.IsFalse(brokerage.IsConnected);
+
+            var algorithm = new QCAlgorithm();
+            var marketHoursDatabase = MarketHoursDatabase.FromDataFolder();
+            var symbolPropertiesDataBase = SymbolPropertiesDatabase.FromDataFolder();
+            var securityService = new SecurityService(algorithm.Portfolio.CashBook, marketHoursDatabase, symbolPropertiesDataBase, algorithm);
+            algorithm.Securities.SetSecurityService(securityService);
+            algorithm.SetLiveMode(true);
+
+            var transactionHandler = new TestBrokerageTransactionHandler();
+            transactionHandler.Initialize(algorithm, brokerage, new TestResultHandler());
+
+            // Advance current time UTC so cash sync is performed
+            transactionHandler.TestCurrentTimeUtc = transactionHandler.TestCurrentTimeUtc.AddDays(2);
+
+            try
             {
-                get { return 0; }
+                while (true)
+                {
+                    transactionHandler.ProcessSynchronousEvents();
+
+                    Assert.IsFalse(brokerage.IsConnected);
+
+                    Thread.Sleep(1000);
+                }
+            }
+            catch (Exception exception)
+            {
+                // expect exception from ProcessSynchronousEvents when max attempts reached
+                Assert.That(exception.Message.Contains("maximum number of attempts"));
+            }
+        }
+
+        [Test]
+        public void AddOrderWaitsForOrderToBeProcessed()
+        {
+            var algorithm = new QCAlgorithm();
+            algorithm.SubscriptionManager.SetDataManager(new DataManagerStub(algorithm));
+
+            var security = algorithm.AddSecurity(SecurityType.Equity, "SPY");
+            security.SetMarketPrice(new Tick { Value = 150 });
+            algorithm.SetFinishedWarmingUp();
+
+            var transactionHandler = new BrokerageTransactionHandler();
+            transactionHandler.Initialize(algorithm, new BacktestingBrokerage(algorithm), new BacktestingResultHandler());
+
+            algorithm.Transactions.SetOrderProcessor(transactionHandler);
+
+            var flag = new ManualResetEvent(false);
+            Task.Run(() =>
+                {
+                    flag.Set();
+                    transactionHandler.Run();
+                });
+            // lets wait until the task starts running
+            flag.WaitOne();
+
+            var ticket = algorithm.LimitOrder(security.Symbol, 1, 100);
+
+            var openOrders = algorithm.Transactions.GetOpenOrders();
+
+            transactionHandler.Exit();
+
+            Assert.AreEqual(1, openOrders.Count);
+            Assert.IsTrue(ticket.HasOrder);
+        }
+
+        [Test]
+        public void FillMessageIsAddedToOrderTag()
+        {
+            // Initializes the transaction handler
+            var transactionHandler = new BrokerageTransactionHandler();
+            var brokerage = new BacktestingBrokerage(_algorithm);
+            transactionHandler.Initialize(_algorithm, brokerage, new BacktestingResultHandler());
+
+            // Creates a market order
+            var security = _algorithm.Securities[Ticker];
+            var price = 1.12m;
+            security.SetMarketPrice(new Tick(DateTime.UtcNow.AddDays(-1), security.Symbol, price, price, price));
+            var orderRequest = new SubmitOrderRequest(OrderType.Market, security.Type, security.Symbol, 1000, 0, 0, DateTime.UtcNow, "TestTag");
+
+            // Mock the order processor
+            var orderProcessorMock = new Mock<IOrderProcessor>();
+            orderProcessorMock.Setup(m => m.GetOrderTicket(It.IsAny<int>())).Returns(new OrderTicket(_algorithm.Transactions, orderRequest));
+            _algorithm.Transactions.SetOrderProcessor(orderProcessorMock.Object);
+
+            Assert.AreEqual(transactionHandler.GetOpenOrders().Count, 0);
+            // Submit and process the market order
+            var orderTicket = transactionHandler.Process(orderRequest);
+            transactionHandler.HandleOrderRequest(orderRequest);
+            Assert.IsTrue(orderTicket.Status == OrderStatus.Submitted);
+
+            brokerage.Scan();
+            Assert.IsTrue(orderTicket.Status == OrderStatus.Filled);
+
+            var order = transactionHandler.GetOrderById(orderTicket.OrderId);
+            Assert.IsTrue(order.Tag.Contains("TestTag"));
+            Assert.IsTrue(order.Tag.Contains("Warning: fill at stale price"));
+        }
+
+        internal class EmptyHistoryProvider : HistoryProviderBase
+        {
+            public override int DataPointCount => 0;
+
+            public override void Initialize(HistoryProviderInitializeParameters parameters)
+            {
             }
 
-            public void Initialize(AlgorithmNodePacket job, IDataProvider dataProvider, IDataCacheProvider dataCacheProvider, IMapFileProvider mapFileProvider, IFactorFileProvider factorFileProvider, Action<int> statusUpdate)
-            {
-            }
-
-            public IEnumerable<Slice> GetHistory(IEnumerable<HistoryRequest> requests, DateTimeZone sliceTimeZone)
+            public override IEnumerable<Slice> GetHistory(IEnumerable<HistoryRequest> requests, DateTimeZone sliceTimeZone)
             {
                 return Enumerable.Empty<Slice>();
             }

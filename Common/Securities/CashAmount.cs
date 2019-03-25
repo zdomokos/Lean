@@ -22,8 +22,6 @@ namespace QuantConnect.Securities
     /// </summary>
     public struct CashAmount
     {
-        private readonly ICurrencyConverter _currencyConverter;
-
         /// <summary>
         /// The amount of cash
         /// </summary>
@@ -35,31 +33,56 @@ namespace QuantConnect.Securities
         public string Currency { get; }
 
         /// <summary>
-        /// Returns a cash amount denominated in the account currency
-        /// </summary>
-        public CashAmount ValueInAccountCurrency => _currencyConverter.ConvertToAccountCurrency(this);
-
-        /// <summary>
         /// Initializes a new instance of the <see cref="CashAmount"/> class
         /// </summary>
         /// <param name="amount">The amount</param>
         /// <param name="currency">The currency</param>
-        /// <param name="currencyConverter">The currency converter</param>
-        public CashAmount(decimal amount, string currency, ICurrencyConverter currencyConverter)
+        public CashAmount(decimal amount, string currency)
         {
             if (string.IsNullOrWhiteSpace(currency))
             {
                 throw new ArgumentNullException(nameof(currency), "Invalid currency");
             }
 
-            if (currencyConverter == null)
-            {
-                throw new ArgumentNullException(nameof(currencyConverter), "Invalid currency converter");
-            }
-
             Amount = amount;
             Currency = currency;
-            _currencyConverter = currencyConverter;
+        }
+
+        /// <summary>
+        /// Will determine if two <see cref="CashAmount"/> instances are equal
+        /// Useful to compare against the default instance
+        /// </summary>
+        /// <returns>True if <see cref="Currency"/> and <see cref="Amount"/> are equal</returns>
+        public static bool operator ==(CashAmount lhs, CashAmount rhs)
+        {
+            return Equals(lhs, rhs);
+        }
+
+        /// <summary>
+        /// Will determine if two <see cref="CashAmount"/> instances are different
+        /// Useful to compare against the default instance
+        /// </summary>
+        /// <returns>True if <see cref="Currency"/> or <see cref="Amount"/> are different</returns>
+        public static bool operator !=(CashAmount lhs, CashAmount rhs)
+        {
+            return !Equals(lhs, rhs);
+        }
+
+        /// <summary>
+        /// Used to compare two <see cref="CashAmount"/> instances.
+        /// Useful to compare against the default instance
+        /// </summary>
+        /// <param name="obj">The other object to compare with</param>
+        /// <returns>True if <see cref="Currency"/> and <see cref="Amount"/> are equal</returns>
+        public override bool Equals(object obj)
+        {
+            if (obj is CashAmount)
+            {
+                var cashAmountObj = (CashAmount) obj;
+                return Amount == cashAmountObj.Amount
+                    && Currency == cashAmountObj.Currency;
+            }
+            return false;
         }
     }
 }

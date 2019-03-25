@@ -42,6 +42,8 @@ namespace QuantConnect.AlgorithmFactory.Python.Wrappers
     public class AlgorithmPythonWrapper : IAlgorithm
     {
         private readonly dynamic _algorithm = null;
+        private readonly dynamic _onData;
+        private readonly dynamic _onOrderEvent;
         private readonly IAlgorithm _baseAlgorithm;
         private readonly bool _isOnDataDefined = false;
 
@@ -82,8 +84,11 @@ namespace QuantConnect.AlgorithmFactory.Python.Wrappers
 
                             // determines whether OnData method was defined or inherits from QCAlgorithm
                             // If it is not, OnData from the base class will not be called
-                            var pythonType = (_algorithm as PyObject).GetAttr("OnData").GetPythonType();
+                            _onData = (_algorithm as PyObject).GetAttr("OnData");
+                            var pythonType = _onData.GetPythonType();
                             _isOnDataDefined = pythonType.Repr().Equals("<class \'method\'>");
+
+                            _onOrderEvent = (_algorithm as PyObject).GetAttr("OnOrderEvent");
                         }
                     }
 
@@ -275,6 +280,11 @@ namespace QuantConnect.AlgorithmFactory.Python.Wrappers
         public IFutureChainProvider FutureChainProvider => _baseAlgorithm.FutureChainProvider;
 
         /// <summary>
+        /// Returns the current Slice object
+        /// </summary>
+        public Slice CurrentSlice => _baseAlgorithm.CurrentSlice;
+
+        /// <summary>
         /// Algorithm start date for backtesting, set by the SetStartDate methods.
         /// </summary>
         public DateTime StartDate => _baseAlgorithm.StartDate;
@@ -376,6 +386,11 @@ namespace QuantConnect.AlgorithmFactory.Python.Wrappers
         /// Current date/time in UTC.
         /// </summary>
         public DateTime UtcTime => _baseAlgorithm.UtcTime;
+
+        /// <summary>
+        /// Gets the account currency
+        /// </summary>
+        public string AccountCurrency => _baseAlgorithm.AccountCurrency;
 
         /// <summary>
         /// Set a required SecurityType-symbol and resolution for algorithm
@@ -533,7 +548,7 @@ namespace QuantConnect.AlgorithmFactory.Python.Wrappers
             {
                 using (Py.GIL())
                 {
-                    _algorithm.OnData(SubscriptionManager.HasCustomData ? new PythonSlice(slice) : slice);
+                    _onData(SubscriptionManager.HasCustomData ? new PythonSlice(slice) : slice);
                 }
             }
         }
@@ -678,7 +693,7 @@ namespace QuantConnect.AlgorithmFactory.Python.Wrappers
         {
             using (Py.GIL())
             {
-                _algorithm.OnOrderEvent(newEvent);
+                _onOrderEvent(newEvent);
             }
         }
 
@@ -770,6 +785,14 @@ namespace QuantConnect.AlgorithmFactory.Python.Wrappers
         public void SetBrokerageModel(IBrokerageModel brokerageModel) => _baseAlgorithm.SetBrokerageModel(brokerageModel);
 
         /// <summary>
+        /// Sets the account currency cash symbol this algorithm is to manage.
+        /// </summary>
+        /// <remarks>Has to be called during <see cref="Initialize"/> before
+        /// calling <see cref="SetCash(decimal)"/> or adding any <see cref="Security"/></remarks>
+        /// <param name="accountCurrency">The account currency cash symbol to set</param>
+        public void SetAccountCurrency(string accountCurrency) => _baseAlgorithm.SetAccountCurrency(accountCurrency);
+
+        /// <summary>
         /// Set the starting capital for the strategy
         /// </summary>
         /// <param name="startingCash">decimal starting capital, default $100,000</param>
@@ -781,7 +804,7 @@ namespace QuantConnect.AlgorithmFactory.Python.Wrappers
         /// <param name="symbol">The cash symbol to set</param>
         /// <param name="startingCash">Decimal cash value of portfolio</param>
         /// <param name="conversionRate">The current conversion rate for the</param>
-        public void SetCash(string symbol, decimal startingCash, decimal conversionRate) => _baseAlgorithm.SetCash(symbol, startingCash, conversionRate);
+        public void SetCash(string symbol, decimal startingCash, decimal conversionRate = 0) => _baseAlgorithm.SetCash(symbol, startingCash, conversionRate);
 
         /// <summary>
         /// Set the DateTime Frontier: This is the master time and is

@@ -479,11 +479,9 @@ namespace QuantConnect.Tests.Engine.DataFeeds
         {
             var subscriptionDataConfig = GetSubscriptionDataConfig<T>(symbol, resolution);
             var security = GetSecurity(subscriptionDataConfig);
-
-            return data.Select(t => TimeSlice.Create(
+            var timeSliceFactory = new TimeSliceFactory(TimeZones.Utc);
+            return data.Select(t => timeSliceFactory.Create(
                t.Time,
-               TimeZones.Utc,
-               new CashBook(),
                new List<DataFeedPacket> { new DataFeedPacket(security, subscriptionDataConfig, new List<BaseData>() { t as BaseData }) },
                new SecurityChanges(Enumerable.Empty<Security>(), Enumerable.Empty<Security>()),
                 new Dictionary<Universe, BaseDataCollection>()).Slice);
@@ -507,8 +505,10 @@ namespace QuantConnect.Tests.Engine.DataFeeds
             return new Security(
                 SecurityExchangeHours.AlwaysOpen(TimeZones.Utc),
                 subscriptionDataConfig,
-                new Cash(CashBook.AccountCurrency, 0, 1m),
-                SymbolProperties.GetDefault(CashBook.AccountCurrency));
+                new Cash(Currencies.USD, 0, 1m),
+                SymbolProperties.GetDefault(Currencies.USD),
+                ErrorCurrencyConverter.Instance
+            );
         }
     }
 }

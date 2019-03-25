@@ -181,9 +181,22 @@ namespace QuantConnect.Tests.Brokerages
 
         internal static Security CreateSecurity(Symbol symbol)
         {
-            return new Security(SecurityExchangeHours.AlwaysOpen(TimeZones.NewYork),
-                new SubscriptionDataConfig(typeof(TradeBar), symbol, Resolution.Minute, TimeZones.NewYork, TimeZones.NewYork, false, false, false),
-                new Cash(CashBook.AccountCurrency, 0, 1m), SymbolProperties.GetDefault(CashBook.AccountCurrency));
+            return new Security(
+                SecurityExchangeHours.AlwaysOpen(TimeZones.NewYork),
+                new SubscriptionDataConfig(
+                    typeof(TradeBar),
+                    symbol,
+                    Resolution.Minute,
+                    TimeZones.NewYork,
+                    TimeZones.NewYork,
+                    false,
+                    false,
+                    false
+                ),
+                new Cash(Currencies.USD, 0, 1m),
+                SymbolProperties.GetDefault(Currencies.USD),
+                ErrorCurrencyConverter.Instance
+            );
         }
 
         public OrderProvider OrderProvider
@@ -225,7 +238,7 @@ namespace QuantConnect.Tests.Brokerages
             {
                 if (holding.Quantity == 0) continue;
                 Log.Trace("Liquidating: " + holding);
-                var order = new MarketOrder(holding.Symbol, -holding.Quantity, DateTime.Now);
+                var order = new MarketOrder(holding.Symbol, -holding.Quantity, DateTime.UtcNow);
                 _orderProvider.Add(order);
                 PlaceOrderWaitForStatus(order, OrderStatus.Filled);
             }
@@ -267,9 +280,17 @@ namespace QuantConnect.Tests.Brokerages
         protected abstract decimal LowPrice { get; }
 
         /// <summary>
-        /// Returns wether or not the brokers order methods implementation are async
+        /// Returns whether or not the brokers order methods implementation are async
         /// </summary>
         protected abstract bool IsAsync();
+
+        /// <summary>
+        /// Returns whether or not the brokers order cancel method implementation is async
+        /// </summary>
+        protected virtual bool IsCancelAsync()
+        {
+            return IsAsync();
+        }
 
         /// <summary>
         /// Gets the current market price of the specified security
@@ -319,7 +340,7 @@ namespace QuantConnect.Tests.Brokerages
                 Log.Error(exception);
             }
 
-            Assert.AreEqual(IsAsync() || parameters.ExpectedCancellationResult, cancelResult);
+            Assert.AreEqual(IsCancelAsync() || parameters.ExpectedCancellationResult, cancelResult);
 
             if (parameters.ExpectedCancellationResult)
             {
@@ -342,7 +363,7 @@ namespace QuantConnect.Tests.Brokerages
             {
                 Log.Error(exception);
             }
-            Assert.AreEqual(IsAsync(), cancelResultSecondTime);
+            Assert.AreEqual(IsCancelAsync(), cancelResultSecondTime);
             // We do NOT expect the OrderStatus.Canceled event
             Assert.IsFalse(canceledOrderStatusEvent.WaitOne(new TimeSpan(0, 0, 10)));
 
@@ -372,7 +393,7 @@ namespace QuantConnect.Tests.Brokerages
         }
 
         [Test, TestCaseSource("OrderParameters")]
-        public void ShortFromZero(OrderTestParameters parameters)
+        public virtual void ShortFromZero(OrderTestParameters parameters)
         {
             Log.Trace("");
             Log.Trace("SHORT FROM ZERO");
@@ -381,7 +402,7 @@ namespace QuantConnect.Tests.Brokerages
         }
 
         [Test, TestCaseSource("OrderParameters")]
-        public void CloseFromShort(OrderTestParameters parameters)
+        public virtual void CloseFromShort(OrderTestParameters parameters)
         {
             Log.Trace("");
             Log.Trace("CLOSE FROM SHORT");
@@ -394,7 +415,7 @@ namespace QuantConnect.Tests.Brokerages
         }
 
         [Test, TestCaseSource("OrderParameters")]
-        public void ShortFromLong(OrderTestParameters parameters)
+        public virtual void ShortFromLong(OrderTestParameters parameters)
         {
             Log.Trace("");
             Log.Trace("SHORT FROM LONG");
@@ -412,7 +433,7 @@ namespace QuantConnect.Tests.Brokerages
         }
 
         [Test, TestCaseSource("OrderParameters")]
-        public void LongFromShort(OrderTestParameters parameters)
+        public virtual void LongFromShort(OrderTestParameters parameters)
         {
             Log.Trace("");
             Log.Trace("LONG FROM SHORT");
@@ -436,7 +457,7 @@ namespace QuantConnect.Tests.Brokerages
             Log.Trace("GET CASH BALANCE");
             Log.Trace("");
             var balance = Brokerage.GetCashBalance();
-            Assert.AreEqual(1, balance.Count(x => x.Symbol == "USD"));
+            Assert.AreEqual(1, balance.Count(x => x.Currency == Currencies.USD));
         }
 
         [Test]
@@ -447,7 +468,7 @@ namespace QuantConnect.Tests.Brokerages
             Log.Trace("");
             var before = Brokerage.GetAccountHoldings();
 
-            PlaceOrderWaitForStatus(new MarketOrder(Symbol, GetDefaultQuantity(), DateTime.Now));
+            PlaceOrderWaitForStatus(new MarketOrder(Symbol, GetDefaultQuantity(), DateTime.UtcNow));
 
             Thread.Sleep(3000);
 

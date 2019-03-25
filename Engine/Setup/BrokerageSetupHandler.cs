@@ -26,7 +26,6 @@ using QuantConnect.Configuration;
 using QuantConnect.Data.Market;
 using QuantConnect.Interfaces;
 using QuantConnect.Lean.Engine.DataFeeds;
-using QuantConnect.Lean.Engine.RealTime;
 using QuantConnect.Lean.Engine.Results;
 using QuantConnect.Lean.Engine.TransactionHandlers;
 using QuantConnect.Logging;
@@ -129,17 +128,14 @@ namespace QuantConnect.Lean.Engine.Setup
         /// <summary>
         /// Primary entry point to setup a new algorithm
         /// </summary>
-        /// <param name="algorithm">Algorithm instance</param>
-        /// <param name="brokerage">New brokerage output instance</param>
-        /// <param name="job">Algorithm job task</param>
-        /// <param name="resultHandler">The configured result handler</param>
-        /// <param name="transactionHandler">The configurated transaction handler</param>
-        /// <param name="realTimeHandler">The configured real time handler</param>
+        /// <param name="parameters">The parameters object to use</param>
         /// <returns>True on successfully setting up the algorithm state, or false on error.</returns>
-        public bool Setup(IAlgorithm algorithm, IBrokerage brokerage, AlgorithmNodePacket job, IResultHandler resultHandler, ITransactionHandler transactionHandler, IRealTimeHandler realTimeHandler)
+        public bool Setup(SetupHandlerParameters parameters)
         {
+            var algorithm = parameters.Algorithm;
+            var brokerage = parameters.Brokerage;
             // verify we were given the correct job packet type
-            var liveJob = job as LiveNodePacket;
+            var liveJob = parameters.AlgorithmNodePacket as LiveNodePacket;
             if (liveJob == null)
             {
                 AddInitializationError("BrokerageSetupHandler requires a LiveNodePacket");
@@ -169,10 +165,10 @@ namespace QuantConnect.Lean.Engine.Setup
             {
                 Log.Trace("BrokerageSetupHandler.Setup(): Initializing algorithm...");
 
-                resultHandler.SendStatusUpdate(AlgorithmStatus.Initializing, "Initializing algorithm...");
+                parameters.ResultHandler.SendStatusUpdate(AlgorithmStatus.Initializing, "Initializing algorithm...");
 
                 //Execute the initialize code:
-                var controls = job.Controls;
+                var controls = liveJob.Controls;
                 var isolator = new Isolator();
                 var initializeComplete = isolator.ExecuteWithTimeLimit(TimeSpan.FromSeconds(300), () =>
                 {
@@ -185,7 +181,7 @@ namespace QuantConnect.Lean.Engine.Setup
                         algorithm.Portfolio.MarginCallModel = MarginCallModel.Null;
 
                         //Set our parameters
-                        algorithm.SetParameters(job.Parameters);
+                        algorithm.SetParameters(liveJob.Parameters);
                         algorithm.SetAvailableDataTypes(GetConfiguredDataFeeds());
 
                         //Algorithm is live, not backtesting:
@@ -195,7 +191,7 @@ namespace QuantConnect.Lean.Engine.Setup
                         algorithm.SetDateTime(DateTime.UtcNow);
 
                         //Set the source impl for the event scheduling
-                        algorithm.Schedule.SetEventSchedule(realTimeHandler);
+                        algorithm.Schedule.SetEventSchedule(parameters.RealTimeHandler);
 
                         // set the option chain provider
                         algorithm.SetOptionChainProvider(new CachingOptionChainProvider(new LiveOptionChainProvider()));
@@ -215,6 +211,13 @@ namespace QuantConnect.Lean.Engine.Setup
                         //Initialise the algorithm, get the required data:
                         algorithm.Initialize();
 
+                        if (algorithm.AccountCurrency != Currencies.USD)
+                        {
+                            throw new NotImplementedException(
+                                "BrokerageSetupHandler.Setup(): calling 'QCAlgorithm.SetAccountCurrency()' " +
+                                "is only supported in backtesting for now.");
+                        }
+
                         if (liveJob.Brokerage != "PaperBrokerage")
                         {
                             //Zero the CashBook - we'll populate directly from brokerage
@@ -228,7 +231,8 @@ namespace QuantConnect.Lean.Engine.Setup
                     {
                         AddInitializationError(err.ToString(), err);
                     }
-                }, controls.RamAllocation);
+                }, controls.RamAllocation,
+                    sleepIntervalMillis: 50); // entire system is waiting on this, so be as fast as possible
 
                 if (!initializeComplete)
                 {
@@ -237,7 +241,7 @@ namespace QuantConnect.Lean.Engine.Setup
                 }
 
                 // let the world know what we're doing since logging in can take a minute
-                resultHandler.SendStatusUpdate(AlgorithmStatus.LoggingIn, "Logging into brokerage...");
+                parameters.ResultHandler.SendStatusUpdate(AlgorithmStatus.LoggingIn, "Logging into brokerage...");
 
                 brokerage.Message += brokerageOnMessage;
 
@@ -270,8 +274,8 @@ namespace QuantConnect.Lean.Engine.Setup
                     var cashBalance = brokerage.GetCashBalance();
                     foreach (var cash in cashBalance)
                     {
-                        Log.Trace("BrokerageSetupHandler.Setup(): Setting " + cash.Symbol + " cash to " + cash.Amount);
-                        algorithm.Portfolio.SetCash(cash.Symbol, cash.Amount, cash.ConversionRate);
+                        Log.Trace("BrokerageSetupHandler.Setup(): Setting " + cash.Currency + " cash to " + cash.Amount);
+                        algorithm.Portfolio.SetCash(cash.Currency, cash.Amount, 0);
                     }
                 }
                 catch (Exception err)
@@ -290,7 +294,7 @@ namespace QuantConnect.Lean.Engine.Setup
                 Log.Trace("BrokerageSetupHandler.Setup(): Fetching open orders from brokerage...");
                 try
                 {
-                    GetOpenOrders(algorithm, resultHandler, transactionHandler, brokerage, supportedSecurityTypes, minResolution.Value);
+                    GetOpenOrders(algorithm, parameters.ResultHandler, parameters.TransactionHandler, brokerage, supportedSecurityTypes, minResolution.Value);
                 }
                 catch (Exception err)
                 {
@@ -347,6 +351,7 @@ namespace QuantConnect.Lean.Engine.Setup
                 //Finalize Initialization
                 algorithm.PostInitialize();
 
+                BaseSetupHandler.SetupCurrencyConversions(algorithm, parameters.UniverseSelection);
                 //Set the starting portfolio value for the strategy to calculate performance:
                 StartingPortfolioValue = algorithm.Portfolio.TotalPortfolioValue;
                 StartingDate = DateTime.Now;
@@ -385,7 +390,7 @@ namespace QuantConnect.Lean.Engine.Setup
                 else
                 {
                     // for items not directly requested set leverage to 1 and at the min resolution
-                    algorithm.AddSecurity(symbol.SecurityType, symbol.Value, minResolution, null, true, 1.0m, false);
+                    algorithm.AddSecurity(symbol.SecurityType, symbol.Value, minResolution, symbol.ID.Market, true, 1.0m, false);
                 }
             }
         }

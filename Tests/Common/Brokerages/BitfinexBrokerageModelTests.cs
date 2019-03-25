@@ -29,9 +29,22 @@ namespace QuantConnect.Tests.Common.Brokerages
         {
             get
             {
-                return new Security(SecurityExchangeHours.AlwaysOpen(TimeZones.NewYork),
-                    new SubscriptionDataConfig(typeof(TradeBar), Symbol, Resolution.Minute, TimeZones.NewYork, TimeZones.NewYork, false, false, false),
-                    new Cash(CashBook.AccountCurrency, 0, 1m), SymbolProperties.GetDefault(CashBook.AccountCurrency));
+                return new Security(
+                    SecurityExchangeHours.AlwaysOpen(TimeZones.NewYork),
+                    new SubscriptionDataConfig(
+                        typeof(TradeBar),
+                        Symbol,
+                        Resolution.Minute,
+                        TimeZones.NewYork,
+                        TimeZones.NewYork,
+                        false,
+                        false,
+                        false
+                    ),
+                    new Cash(Currencies.USD, 0, 1m),
+                    SymbolProperties.GetDefault(Currencies.USD),
+                    ErrorCurrencyConverter.Instance
+                );
             }
         }
 

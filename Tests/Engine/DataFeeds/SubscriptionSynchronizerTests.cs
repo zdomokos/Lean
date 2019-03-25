@@ -48,8 +48,20 @@ namespace QuantConnect.Tests.Engine.DataFeeds
 
         private void TestSubscriptionSynchronizerSpeed(QCAlgorithm algorithm)
         {
-            var feed = new AlgorithmManagerTests.MockDataFeed();
-            var dataManager = new DataManager(feed, new UniverseSelection(feed, algorithm), algorithm.Settings, algorithm.TimeKeeper);
+            var feed = new MockDataFeed();
+            var marketHoursDatabase = MarketHoursDatabase.FromDataFolder();
+            var symbolPropertiesDataBase = SymbolPropertiesDatabase.FromDataFolder();
+            var securityService = new SecurityService(
+                algorithm.Portfolio.CashBook,
+                marketHoursDatabase,
+                symbolPropertiesDataBase,
+                algorithm);
+            algorithm.Securities.SetSecurityService(securityService);
+            var dataManager = new DataManager(feed,
+                new UniverseSelection(algorithm, securityService),
+                algorithm,
+                algorithm.TimeKeeper,
+                marketHoursDatabase);
             algorithm.SubscriptionManager.SetDataManager(dataManager);
 
             algorithm.Initialize();
@@ -65,10 +77,10 @@ namespace QuantConnect.Tests.Engine.DataFeeds
             var endTimeUtc = algorithm.EndDate.ConvertToUtc(TimeZones.NewYork);
             var startTimeUtc = algorithm.StartDate.ConvertToUtc(TimeZones.NewYork);
             var subscriptionBasedTimeProvider = new SubscriptionFrontierTimeProvider(startTimeUtc, dataManager);
-            var synchronizer = new SubscriptionSynchronizer(dataManager.UniverseSelection, algorithm.TimeZone,
-                                                            algorithm.Portfolio.CashBook,
-                                                            subscriptionBasedTimeProvider);
-
+            var timeSliceFactory = new TimeSliceFactory(algorithm.TimeZone);
+            var synchronizer = new SubscriptionSynchronizer(dataManager.UniverseSelection);
+            synchronizer.SetTimeProvider(subscriptionBasedTimeProvider);
+            synchronizer.SetTimeSliceFactory(timeSliceFactory);
             var totalDataPoints = 0;
             var subscriptions = dataManager.DataFeedSubscriptions;
             foreach (var kvp in algorithm.Securities)
@@ -120,7 +132,8 @@ namespace QuantConnect.Tests.Engine.DataFeeds
             .ToList();
 
             dataPointCount = data.Count;
-            return new Subscription(universe, security, config, data.GetEnumerator(), offsetProvider, endTimeUtc, endTimeUtc, false);
+            var subscriptionRequest = new SubscriptionRequest(false, universe, security, config, startTimeUtc, endTimeUtc);
+            return new Subscription(subscriptionRequest, data.GetEnumerator(), offsetProvider);
         }
 
         private class DataPoint : BaseData

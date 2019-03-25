@@ -21,7 +21,6 @@ using System.Linq;
 using System.Threading;
 using QuantConnect.Configuration;
 using QuantConnect.Interfaces;
-using QuantConnect.Lean.Engine.DataFeeds;
 using QuantConnect.Lean.Engine.Setup;
 using QuantConnect.Lean.Engine.TransactionHandlers;
 using QuantConnect.Logging;
@@ -129,10 +128,9 @@ namespace QuantConnect.Lean.Engine.Results
         /// <param name="job">Algorithm job packet for this result handler</param>
         /// <param name="messagingHandler">The handler responsible for communicating messages to listeners</param>
         /// <param name="api">The api instance used for handling logs</param>
-        /// <param name="dataFeed"></param>
         /// <param name="setupHandler"></param>
         /// <param name="transactionHandler"></param>
-        public virtual void Initialize(AlgorithmNodePacket job, IMessagingHandler messagingHandler, IApi api, IDataFeed dataFeed, ISetupHandler setupHandler, ITransactionHandler transactionHandler)
+        public virtual void Initialize(AlgorithmNodePacket job, IMessagingHandler messagingHandler, IApi api, ISetupHandler setupHandler, ITransactionHandler transactionHandler)
         {
             _algorithmId = job.AlgorithmId;
             _projectId = job.ProjectId;
@@ -234,7 +232,7 @@ namespace QuantConnect.Lean.Engine.Results
                 {
                     _lastUpdate = Algorithm.UtcTime.Date;
                     _lastDaysProcessed = _daysProcessed;
-                    _nextUpdate = DateTime.UtcNow.AddSeconds(0.5);
+                    _nextUpdate = DateTime.UtcNow.AddSeconds(2);
                 }
                 catch (Exception err)
                 {
@@ -273,13 +271,25 @@ namespace QuantConnect.Lean.Engine.Results
                 if (progress > 0.999m) progress = 0.999m;
 
                 //1. Cloud Upload -> Upload the whole packet to S3  Immediately:
-                var completeResult = new BacktestResult(Algorithm.IsFrameworkAlgorithm, Charts, _transactionHandler.Orders, Algorithm.Transactions.TransactionRecord, new Dictionary<string, string>(), runtimeStatistics, new Dictionary<string, AlgorithmPerformance>());
-                var complete = new BacktestResultPacket(_job, completeResult, progress);
-
                 if (DateTime.UtcNow > _nextS3Update)
                 {
+                    // For intermediate backtesting results, we truncate the order list to include only the last 100 orders
+                    // The final packet will contain the full list of orders.
+                    const int maxOrders = 100;
+                    var orderCount = _transactionHandler.Orders.Count;
+
+                    var completeResult = new BacktestResult(
+                        Algorithm.IsFrameworkAlgorithm,
+                        Charts,
+                        orderCount > maxOrders ? _transactionHandler.Orders.Skip(orderCount - maxOrders).ToDictionary() : _transactionHandler.Orders.ToDictionary(),
+                        Algorithm.Transactions.TransactionRecord,
+                        new Dictionary<string, string>(),
+                        runtimeStatistics,
+                        new Dictionary<string, AlgorithmPerformance>());
+
+                    StoreResult(new BacktestResultPacket(_job, completeResult, progress));
+
                     _nextS3Update = DateTime.UtcNow.AddSeconds(30);
-                    StoreResult(complete);
                 }
 
                 //2. Backtest Update -> Send the truncated packet to the backtester:
@@ -340,29 +350,39 @@ namespace QuantConnect.Lean.Engine.Results
         {
             try
             {
-                lock (_chartLock)
+                // Make sure this is the right type of packet:
+                if (packet.Type != PacketType.BacktestResult) return;
+
+                // Port to packet format:
+                var result = packet as BacktestResultPacket;
+
+                if (result != null)
                 {
-                    //1. Make sure this is the right type of packet:
-                    if (packet.Type != PacketType.BacktestResult) return;
+                    // Get Storage Location:
+                    var key = _job.BacktestId + ".json";
 
-                    //2. Port to packet format:
-                    var result = packet as BacktestResultPacket;
-
-                    if (result != null)
+                    BacktestResult results;
+                    lock (_chartLock)
                     {
-                        //3. Set Alpha Runtime Statistics
-                        result.Results.AlphaRuntimeStatistics = AlphaRuntimeStatistics;
-
-                        //4. Get Storage Location:
-                        var key = _job.BacktestId + ".json";
-
-                        //5. Save results
-                        SaveResults(key, result.Results);
+                        results = new BacktestResult(
+                            result.Results.IsFrameworkAlgorithm,
+                            result.Results.Charts.ToDictionary(x => x.Key, x => x.Value.Clone()),
+                            result.Results.Orders,
+                            result.Results.ProfitLoss,
+                            result.Results.Statistics,
+                            result.Results.RuntimeStatistics,
+                            result.Results.RollingWindow,
+                            result.Results.TotalPerformance
+                        )
+                        // Set Alpha Runtime Statistics
+                        { AlphaRuntimeStatistics = result.Results.AlphaRuntimeStatistics };
                     }
-                    else
-                    {
-                        Log.Error("BacktestingResultHandler.StoreResult(): Result Null.");
-                    }
+                    // Save results
+                    SaveResults(key, results);
+                }
+                else
+                {
+                    Log.Error("BacktestingResultHandler.StoreResult(): Result Null.");
                 }
             }
             catch (Exception err)
@@ -399,7 +419,8 @@ namespace QuantConnect.Lean.Engine.Results
 
                 //Create a result packet to send to the browser.
                 var result = new BacktestResultPacket((BacktestNodePacket) job,
-                    new BacktestResult(Algorithm.IsFrameworkAlgorithm, charts, orders, profitLoss, statisticsResults.Summary, banner, statisticsResults.RollingPerformances, statisticsResults.TotalPerformance))
+                    new BacktestResult(Algorithm.IsFrameworkAlgorithm, charts, orders, profitLoss, statisticsResults.Summary, banner, statisticsResults.RollingPerformances, statisticsResults.TotalPerformance)
+                        { AlphaRuntimeStatistics = AlphaRuntimeStatistics })
                 {
                     ProcessingTime = (DateTime.UtcNow - _startTime).TotalSeconds,
                     DateFinished = DateTime.Now,

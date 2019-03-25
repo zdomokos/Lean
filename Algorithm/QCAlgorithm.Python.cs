@@ -86,17 +86,21 @@ namespace QuantConnect.Algorithm
         /// <returns>The new <see cref="Security"/></returns>
         public Security AddData(Type dataType, string symbol, Resolution resolution, DateTimeZone timeZone, bool fillDataForward = false, decimal leverage = 1.0m)
         {
-            var marketHoursDbEntry = MarketHoursDatabase.SetEntryAlwaysOpen(Market.USA, symbol, SecurityType.Base, timeZone);
+            MarketHoursDatabase.SetEntryAlwaysOpen(Market.USA, symbol, SecurityType.Base, timeZone);
 
             //Add this to the data-feed subscriptions
             var symbolObject = new Symbol(SecurityIdentifier.GenerateBase(symbol, Market.USA), symbol);
-            var symbolProperties = _symbolPropertiesDatabase.GetSymbolProperties(Market.USA, symbol, SecurityType.Base, CashBook.AccountCurrency);
 
             //Add this new generic data as a tradeable security:
-            var security = SecurityManager.CreateSecurity(dataType, Portfolio, SubscriptionManager, marketHoursDbEntry.ExchangeHours, marketHoursDbEntry.DataTimeZone,
-                symbolProperties, SecurityInitializer, symbolObject, resolution, fillDataForward, leverage, true, false, true, LiveMode);
+            var config = SubscriptionManager.SubscriptionDataConfigService.Add(dataType,
+                symbolObject,
+                resolution,
+                fillDataForward,
+                isCustomData: true,
+                extendedMarketHours: true);
+            var security = Securities.CreateSecurity(symbolObject, config, leverage);
 
-            AddToUserDefinedUniverse(security);
+            AddToUserDefinedUniverse(security, new List<SubscriptionDataConfig>{ config });
             return security;
         }
 
@@ -392,29 +396,19 @@ namespace QuantConnect.Algorithm
         /// <seealso cref="Plot(string,decimal)"/>
         public void Plot(string series, PyObject pyObject)
         {
-            IIndicator<IndicatorDataPoint> indicator;
-
             using (Py.GIL())
             {
-                var pythonType = pyObject.GetPythonType();
-
                 try
                 {
-                    var type = pythonType.As<Type>();
-                    indicator = pyObject.AsManagedObject(type) as IIndicator<IndicatorDataPoint>;
-
-                    if (indicator == null)
-                    {
-                        throw new ArgumentException();
-                    }
+                    decimal value = ((dynamic)pyObject).Current.Value;
+                    Plot(series, value);
                 }
                 catch
                 {
-                    throw new ArgumentException($"QCAlgorithm.Plot(): The last argument should be a QuantConnect Indicator object, {pythonType.Repr()} was provided.");
+                    var pythonType = pyObject.GetPythonType().Repr();
+                    throw new ArgumentException($"QCAlgorithm.Plot(): The last argument should be a QuantConnect Indicator object, {pythonType} was provided.");
                 }
             }
-
-            Plot(series, indicator.Current.Value);
         }
 
         /// <summary>
@@ -594,7 +588,7 @@ namespace QuantConnect.Algorithm
                         .FirstOrDefault(s => s.Type.BaseType == CreateType(type).BaseType);
                 if (config == null) return null;
 
-                return CreateHistoryRequest(config, start, end, resolution);
+                return _historyRequestFactory.CreateHistoryRequest(config, start, end, GetExchangeHours(x), resolution);
             });
 
             return PandasConverter.GetDataFrame(History(requests.Where(x => x != null)).Memoize());
@@ -621,9 +615,10 @@ namespace QuantConnect.Algorithm
                         .FirstOrDefault(s => s.Type.BaseType == CreateType(type).BaseType);
                 if (config == null) return null;
 
-                Resolution? res = resolution ?? security.Resolution;
-                var start = GetStartTimeAlgoTz(x, periods, resolution).ConvertToUtc(TimeZone);
-                return CreateHistoryRequest(config, start, UtcTime.RoundDown(res.Value.ToTimeSpan()), resolution);
+                var res = GetResolution(x, resolution);
+                var exchange = GetExchangeHours(x);
+                var start = _historyRequestFactory.GetStartTimeAlgoTz(x, periods, res.Value, exchange);
+                return _historyRequestFactory.CreateHistoryRequest(config, start, Time.RoundDown(res.Value.ToTimeSpan()), exchange, res);
             });
 
             return PandasConverter.GetDataFrame(History(requests.Where(x => x != null)).Memoize());
@@ -665,7 +660,7 @@ namespace QuantConnect.Algorithm
                 throw new ArgumentException("The specified security is not of the requested type. Symbol: " + symbol.ToString() + " Requested Type: " + requestedType.Name + " Actual Type: " + actualType);
             }
 
-            var request = CreateHistoryRequest(config, start, end, resolution);
+            var request = _historyRequestFactory.CreateHistoryRequest(config, start, end, GetExchangeHours(symbol), resolution);
             return PandasConverter.GetDataFrame(History(request).Memoize());
         }
 
@@ -683,8 +678,9 @@ namespace QuantConnect.Algorithm
         {
             if (resolution == Resolution.Tick) throw new ArgumentException("History functions that accept a 'periods' parameter can not be used with Resolution.Tick");
 
-            var start = GetStartTimeAlgoTz(symbol, periods, resolution);
-            var end = Time.RoundDown((resolution ?? Securities[symbol].Resolution).ToTimeSpan());
+            var res = GetResolution(symbol, resolution);
+            var start = _historyRequestFactory.GetStartTimeAlgoTz(symbol, periods, res.Value, GetExchangeHours(symbol));
+            var end = Time.RoundDown(res.Value.ToTimeSpan());
             return History(type, symbol, start, end, resolution);
         }
 
@@ -998,7 +994,7 @@ namespace QuantConnect.Algorithm
                 var typeBuilder = AppDomain.CurrentDomain
                     .DefineDynamicAssembly(an, AssemblyBuilderAccess.Run)
                     .DefineDynamicModule("MainModule")
-                    .DefineType(an.Name, TypeAttributes.Class, typeof(DynamicData));
+                    .DefineType(an.Name, TypeAttributes.Class, type);
 
                 pythonType = new PythonActivator(typeBuilder.CreateType(), pyObject);
 

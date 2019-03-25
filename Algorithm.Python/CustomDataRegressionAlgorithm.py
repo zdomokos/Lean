@@ -23,7 +23,6 @@ from QuantConnect.Data import SubscriptionDataSource
 from QuantConnect.Python import PythonData
 
 from datetime import datetime
-import decimal
 import json
 
 ### <summary>
@@ -44,6 +43,7 @@ class CustomDataRegressionAlgorithm(QCAlgorithm):
 
         resolution = Resolution.Second if self.LiveMode else Resolution.Daily
         self.AddData(Bitcoin, "BTC", resolution)
+        self.SetWarmup(1)
 
     def OnData(self, data):
         if not self.Portfolio.Invested:
@@ -60,7 +60,7 @@ class Bitcoin(PythonData):
 
         #return "http://my-ftp-server.com/futures-data-" + date.ToString("Ymd") + ".zip"
         # OR simply return a fixed small data file. Large files will slow down your backtest
-        return SubscriptionDataSource("https://www.quandl.com/api/v3/datasets/BCHARTS/BITSTAMPUSD.csv?order=asc&api_key=WyAazVXnq7ATy_fefTqm", SubscriptionTransportMedium.RemoteFile)
+        return SubscriptionDataSource("https://www.quantconnect.com/api/v2/proxy/quandl/api/v3/datasets/BCHARTS/BITSTAMPUSD.csv?order=asc&api_key=WyAazVXnq7ATy_fefTqm", SubscriptionTransportMedium.RemoteFile)
 
 
     def Reader(self, config, line, date, isLiveMode):
@@ -74,7 +74,7 @@ class Bitcoin(PythonData):
                 liveBTC = json.loads(line)
 
                 # If value is zero, return None
-                value = decimal.Decimal(liveBTC["last"])
+                value = liveBTC["last"]
                 if value == 0: return None
 
                 coin.Time = datetime.now()

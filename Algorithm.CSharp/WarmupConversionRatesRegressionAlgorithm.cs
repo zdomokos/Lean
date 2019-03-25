@@ -30,12 +30,13 @@ namespace QuantConnect.Algorithm.CSharp
         /// </summary>
         public override void Initialize()
         {
-            SetStartDate(2018, 4, 1);
-            SetEndDate(2018, 4, 15);
+            SetStartDate(2018, 4, 5);
+            SetEndDate(2018, 4, 5);
             SetCash(10000);
 
-            SetWarmUp(5);
-            AddCrypto("BTCUSD", Resolution.Daily);
+            SetWarmUp(TimeSpan.FromDays(1));
+            AddCrypto("BTCEUR");
+            AddCrypto("LTCUSD");
         }
 
         /// <summary>
@@ -44,17 +45,25 @@ namespace QuantConnect.Algorithm.CSharp
         /// <param name="data">Slice object keyed by symbol containing the stock data</param>
         public override void OnData(Slice data)
         {
-            var conversionRate = Portfolio.CashBook["BTC"].ConversionRate;
-            if (conversionRate == 0)
+            if (Portfolio.CashBook["EUR"].ConversionRate == 0
+                || Portfolio.CashBook["BTC"].ConversionRate == 0
+                || Portfolio.CashBook["LTC"].ConversionRate == 0)
             {
-                throw new Exception("Conversion rate for BTC should not be zero.");
+                Log($"BTCEUR current price: {Securities["BTCEUR"].Price}");
+                Log($"LTCUSD current price: {Securities["LTCUSD"].Price}");
+                Log($"EUR conversion rate: {Portfolio.CashBook["EUR"].ConversionRate}");
+                Log($"BTC conversion rate: {Portfolio.CashBook["BTC"].ConversionRate}");
+                Log($"LTC conversion rate: {Portfolio.CashBook["LTC"].ConversionRate}");
+
+                throw new Exception("Conversion rate is 0");
             }
-            if (!Portfolio.Invested && !IsWarmingUp)
+
+            if (IsWarmingUp) return;
+            if (!Portfolio.Invested)
             {
-                SetHoldings("BTCUSD", 1);
+                SetHoldings("LTCUSD", 1);
+                Debug("Purchased Stock");
             }
-            Log($"BTC current price: {Securities["BTCUSD"].Price}");
-            Log($"BTC conversion rate: {conversionRate}");
         }
 
         /// <summary>
@@ -75,21 +84,21 @@ namespace QuantConnect.Algorithm.CSharp
             {"Total Trades", "1"},
             {"Average Win", "0%"},
             {"Average Loss", "0%"},
-            {"Compounding Annual Return", "3042.078%"},
-            {"Drawdown", "11.600%"},
+            {"Compounding Annual Return", "-95.726%"},
+            {"Drawdown", "4.200%"},
             {"Expectancy", "0"},
-            {"Net Profit", "16.131%"},
-            {"Sharpe Ratio", "3.222"},
+            {"Net Profit", "-0.859%"},
+            {"Sharpe Ratio", "-10.507"},
             {"Loss Rate", "0%"},
             {"Win Rate", "0%"},
             {"Profit-Loss Ratio", "0"},
-            {"Alpha", "0.006"},
-            {"Beta", "192.114"},
-            {"Annual Standard Deviation", "0.776"},
-            {"Annual Variance", "0.603"},
-            {"Information Ratio", "3.205"},
-            {"Tracking Error", "0.776"},
-            {"Treynor Ratio", "0.013"},
+            {"Alpha", "0.074"},
+            {"Beta", "-167.611"},
+            {"Annual Standard Deviation", "0.103"},
+            {"Annual Variance", "0.011"},
+            {"Information Ratio", "-10.511"},
+            {"Tracking Error", "0.104"},
+            {"Treynor Ratio", "0.006"},
             {"Total Fees", "$0.00"}
         };
     }

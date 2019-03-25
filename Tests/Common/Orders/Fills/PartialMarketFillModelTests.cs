@@ -23,6 +23,7 @@ using QuantConnect.Data;
 using QuantConnect.Data.Market;
 using QuantConnect.Lean.Engine.TransactionHandlers;
 using QuantConnect.Orders;
+using QuantConnect.Orders.Fees;
 using QuantConnect.Orders.Fills;
 using QuantConnect.Securities;
 using QuantConnect.Tests.Engine;
@@ -99,7 +100,13 @@ namespace QuantConnect.Tests.Common.Orders.Fills
             algorithm.Transactions.SetOrderProcessor(transactionHandler);
 
             var config = new SubscriptionDataConfig(typeof(TradeBar), Symbols.SPY, Resolution.Second, TimeZones.NewYork, TimeZones.NewYork, false, false, false);
-            security = new Security(SecurityExchangeHours.AlwaysOpen(TimeZones.NewYork), config, new Cash(CashBook.AccountCurrency, 0, 1m), SymbolProperties.GetDefault(CashBook.AccountCurrency));
+            security = new Security(
+                SecurityExchangeHours.AlwaysOpen(TimeZones.NewYork),
+                config,
+                new Cash(Currencies.USD, 0, 1m),
+                SymbolProperties.GetDefault(Currencies.USD),
+                ErrorCurrencyConverter.Instance
+            );
 
             model = new PartialMarketFillModel(algorithm.Transactions, 2);
 
@@ -161,7 +168,7 @@ namespace QuantConnect.Tests.Common.Orders.Fills
                 if (ticket == null)
                 {
                     // if we can't find the ticket issue empty fills
-                    return new OrderEvent(order, currentUtcTime, 0);
+                    return new OrderEvent(order, currentUtcTime, OrderFee.Zero);
                 }
 
                 // make sure some time has passed
@@ -170,7 +177,7 @@ namespace QuantConnect.Tests.Common.Orders.Fills
                 if (lastOrderEvent != null && currentUtcTime - lastOrderEvent.UtcTime < increment)
                 {
                     // wait a minute between fills
-                    return new OrderEvent(order, currentUtcTime, 0);
+                    return new OrderEvent(order, currentUtcTime, OrderFee.Zero);
                 }
 
                 var remaining = (int)(ticket.Quantity - ticket.QuantityFilled);

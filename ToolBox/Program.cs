@@ -36,6 +36,7 @@ using QuantConnect.ToolBox.NseMarketDataConverter;
 using QuantConnect.ToolBox.OandaDownloader;
 using QuantConnect.ToolBox.QuandlBitfinexDownloader;
 using QuantConnect.ToolBox.QuantQuoteConverter;
+using QuantConnect.ToolBox.RandomDataGenerator;
 using QuantConnect.ToolBox.YahooDownloader;
 using QuantConnect.Util;
 
@@ -142,9 +143,9 @@ namespace QuantConnect.ToolBox
                         break;
                     case "kdc":
                     case "kaikodataconverter":
-                        KaikoDataConverterProgram.KaikoDataConverter(GetParameterOrExit(optionsObject, "market"),
-                                                                     GetParameterOrExit(optionsObject, "tick-type"),
-                                                                     GetParameterOrExit(optionsObject, "source-dir"));
+                        KaikoDataConverterProgram.KaikoDataConverter(GetParameterOrExit(optionsObject, "source-dir"),
+                                                                     GetParameterOrExit(optionsObject, "date"),
+                                                                     GetParameterOrDefault(optionsObject, "exchange", string.Empty));
                         break;
                     case "nmdc":
                     case "nsemarketdataconverter":
@@ -160,6 +161,20 @@ namespace QuantConnect.ToolBox
                     case "cug":
                     case "coarseuniversegenerator":
                         CoarseUniverseGeneratorProgram.CoarseUniverseGenerator();
+                        break;
+                    case "rdg":
+                    case "randomdatagenerator":
+                        RandomDataGeneratorProgram.RandomDataGenerator(
+                            GetParameterOrExit(optionsObject, "from-date"),
+                            GetParameterOrExit(optionsObject, "to-date"),
+                            GetParameterOrExit(optionsObject, "symbol-count"),
+                            GetParameterOrDefault(optionsObject, "market", null),
+                            GetParameterOrDefault(optionsObject, "security-type", "Equity"),
+                            GetParameterOrDefault(optionsObject, "resolution", "Minute"),
+                            GetParameterOrDefault(optionsObject, "data-density", "Dense"),
+                            GetParameterOrDefault(optionsObject, "include-coarse", "true"),
+                            GetParameterOrDefault(optionsObject, "quote-trade-ratio", "1")
+                        );
                         break;
                     default:
                         PrintMessageAndExit(1, "ERROR: Unrecognized --app value");
@@ -187,6 +202,18 @@ namespace QuantConnect.ToolBox
                 PrintMessageAndExit(1, "ERROR: REQUIRED parameter --" + parameter + "= is missing");
             }
             return optionsObject[parameter].ToString();
+        }
+
+        private static string GetParameterOrDefault(IReadOnlyDictionary<string, object> optionsObject, string parameter, string defaultValue)
+        {
+            object value;
+            if (!optionsObject.TryGetValue(parameter, out value))
+            {
+                Console.WriteLine($"'{parameter}' was not specified. Using default value: '{defaultValue}'");
+                return defaultValue;
+            }
+
+            return value.ToString();
         }
     }
 }

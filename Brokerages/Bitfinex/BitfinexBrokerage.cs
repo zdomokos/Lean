@@ -21,12 +21,12 @@ using QuantConnect.Logging;
 using QuantConnect.Orders;
 using QuantConnect.Packets;
 using QuantConnect.Securities;
-using QuantConnect.Util;
 using RestSharp;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
+using QuantConnect.Orders.Fees;
 
 namespace QuantConnect.Brokerages.Bitfinex
 {
@@ -100,7 +100,10 @@ namespace QuantConnect.Brokerages.Bitfinex
             var cancellationSubmitted = false;
             if (response.StatusCode == HttpStatusCode.OK && !(response.Content?.IndexOf("None to cancel", StringComparison.OrdinalIgnoreCase) >= 0))
             {
-                OnOrderEvent(new OrderEvent(order, DateTime.UtcNow, 0, "Bitfinex Order Event") { Status = OrderStatus.CancelPending });
+                OnOrderEvent(new OrderEvent(order,
+                    DateTime.UtcNow,
+                    OrderFee.Zero,
+                    "Bitfinex Order Event") { Status = OrderStatus.CancelPending });
 
                 cancellationSubmitted = true;
             }
@@ -224,9 +227,9 @@ namespace QuantConnect.Brokerages.Bitfinex
         /// Gets the total account cash balance for specified account type
         /// </summary>
         /// <returns></returns>
-        public override List<Cash> GetCashBalance()
+        public override List<CashAmount> GetCashBalance()
         {
-            var list = new List<Cash>();
+            var list = new List<CashAmount>();
             var endpoint = GetEndpoint("balances"); ;
             var request = new RestRequest(endpoint, Method.POST);
 
@@ -250,23 +253,7 @@ namespace QuantConnect.Brokerages.Bitfinex
             {
                 if (item.Amount > 0)
                 {
-                    if (string.Equals(item.Currency, "USD", StringComparison.OrdinalIgnoreCase))
-                    {
-                        list.Add(new Cash(item.Currency, item.Amount, 1));
-                    }
-                    else if (_symbolMapper.IsKnownFiatCurrency(item.Currency))
-                    {
-                        var symbol = Symbol.Create(item.Currency + "USD", SecurityType.Forex, Market.FXCM);
-                        var rate = GetConversionRate(symbol);
-                        list.Add(new Cash(item.Currency.ToUpper(), item.Amount, rate));
-                    }
-                    else
-                    {
-                        var symbol = item.Currency + "USD";
-                        var tick = GetTick(_symbolMapper.GetLeanSymbol(symbol));
-
-                        list.Add(new Cash(item.Currency.ToUpper(), item.Amount, tick.Price));
-                    }
+                    list.Add(new CashAmount(item.Amount, item.Currency.ToUpper()));
                 }
             }
 
@@ -280,6 +267,13 @@ namespace QuantConnect.Brokerages.Bitfinex
         /// <returns>An enumerable of bars covering the span specified in the request</returns>
         public override IEnumerable<BaseData> GetHistory(Data.HistoryRequest request)
         {
+            if (request.Resolution == Resolution.Tick || request.Resolution == Resolution.Second)
+            {
+                OnMessage(new BrokerageMessageEvent(BrokerageMessageType.Warning, "InvalidResolution",
+                    $"{request.Resolution} resolution not supported, no history returned"));
+                yield break;
+            }
+
             string resolution = ConvertResolution(request.Resolution);
             long resolutionInMS = (long)request.Resolution.ToTimeSpan().TotalMilliseconds;
             string symbol = _symbolMapper.GetBrokerageSymbol(request.Symbol);

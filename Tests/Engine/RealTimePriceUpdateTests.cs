@@ -20,11 +20,15 @@ using System.Linq;
 using NUnit.Framework;
 using QuantConnect.Algorithm;
 using QuantConnect.Brokerages;
+using QuantConnect.Data;
 using QuantConnect.Data.Auxiliary;
+using QuantConnect.Data.Market;
+using QuantConnect.Data.UniverseSelection;
 using QuantConnect.Lean.Engine.DataFeeds;
 using QuantConnect.Lean.Engine.Results;
 using QuantConnect.Packets;
 using QuantConnect.Securities;
+using QuantConnect.Tests.Common.Securities;
 
 namespace QuantConnect.Tests.Engine
 {
@@ -33,6 +37,7 @@ namespace QuantConnect.Tests.Engine
     {
         private TestableLiveTradingDataFeed _liveTradingDataFeed;
         private SecurityExchangeHours _exchangeHours;
+        private SubscriptionDataConfig _config;
 
         [TestFixtureSetUp]
         public void Setup()
@@ -59,14 +64,23 @@ namespace QuantConnect.Tests.Engine
             };
 
             var algo = new TestAlgorithm();
-            var dataManager = new DataManager(_liveTradingDataFeed, new UniverseSelection(_liveTradingDataFeed, algo),
-                algo.Settings, algo.TimeKeeper);
+            var marketHoursDatabase = MarketHoursDatabase.FromDataFolder();
+            var symbolPropertiesDataBase = SymbolPropertiesDatabase.FromDataFolder();
+            var dataManager = new DataManager(_liveTradingDataFeed,
+                new UniverseSelection(
+                    algo,
+                    new SecurityService(algo.Portfolio.CashBook, marketHoursDatabase, symbolPropertiesDataBase, algo)),
+                algo,
+                algo.TimeKeeper,
+                marketHoursDatabase);
             algo.SubscriptionManager.SetDataManager(dataManager);
-
+            var synchronizer = new Synchronizer();
+            synchronizer.Initialize(algo, dataManager, true);
             _liveTradingDataFeed.Initialize(algo, jobPacket, new LiveTradingResultHandler(), new LocalDiskMapFileProvider(),
-                                            null, new DefaultDataProvider(), dataManager);
-
+                                            null, new DefaultDataProvider(), dataManager, synchronizer);
             algo.Initialize();
+
+            _config = SecurityTests.CreateTradeBarConfig();
         }
 
         /// <summary>
@@ -88,30 +102,49 @@ namespace QuantConnect.Tests.Engine
         [Test]
         public void NullSubscriptions_DoNotIndicateRealTimePriceUpdates()
         {
-            Assert.IsFalse(_liveTradingDataFeed.UpdateRealTimePrice(null, new TimeZoneOffsetProviderNeverOpen()));
+            Assert.IsFalse(_liveTradingDataFeed.UpdateRealTimePrice(null, new TimeZoneOffsetProviderNeverOpen(), _exchangeHours));
         }
 
         [Test]
         public void ClosedExchanges_DoNotIndicateRealTimePriceUpdates()
         {
-            var security = new Security(Symbol.Empty, _exchangeHours, new Cash("USA", 100m, 1m), SymbolProperties.GetDefault("USA"));
-            var subscription = new Subscription(null, security, null, null, new TimeZoneOffsetProviderNeverOpen(), DateTime.MinValue, DateTime.MaxValue, false);
-            Assert.IsFalse(_liveTradingDataFeed.UpdateRealTimePrice(subscription, new TimeZoneOffsetProviderNeverOpen()));
+            var security = new Security(
+                Symbols.AAPL,
+                _exchangeHours,
+                new Cash("USA", 100m, 1m),
+                SymbolProperties.GetDefault("USA"),
+                ErrorCurrencyConverter.Instance
+            );
+
+            var subscriptionRequest = new SubscriptionRequest(false, null, security, _config, DateTime.MinValue, DateTime.MaxValue);
+            var subscription = new Subscription(subscriptionRequest, null, new TimeZoneOffsetProviderNeverOpen());
+            Assert.IsFalse(_liveTradingDataFeed.UpdateRealTimePrice(subscription, new TimeZoneOffsetProviderNeverOpen(), _exchangeHours));
         }
 
         [Test]
         public void OpenExchanges_DoIndicateRealTimePriceUpdates()
         {
-            var security = new Security(Symbol.Empty, _exchangeHours, new Cash("USA", 100m, 1m), SymbolProperties.GetDefault("USA"));
-            var subscription = new Subscription(null, security, null, null, new TimeZoneOffsetProviderAlwaysOpen(), DateTime.MinValue, DateTime.MaxValue, false);
-            Assert.IsTrue(_liveTradingDataFeed.UpdateRealTimePrice(subscription, new TimeZoneOffsetProviderAlwaysOpen()));
+            var security = new Security(
+                Symbols.AAPL,
+                _exchangeHours,
+                new Cash("USA", 100m, 1m),
+                SymbolProperties.GetDefault("USA"),
+                ErrorCurrencyConverter.Instance
+            );
+
+            var subscriptionRequest = new SubscriptionRequest(false, null, security, _config, DateTime.MinValue, DateTime.MaxValue);
+            var subscription = new Subscription(subscriptionRequest, null, new TimeZoneOffsetProviderNeverOpen());
+            Assert.IsTrue(_liveTradingDataFeed.UpdateRealTimePrice(subscription, new TimeZoneOffsetProviderAlwaysOpen(), _exchangeHours));
         }
 
         class TestableLiveTradingDataFeed : LiveTradingDataFeed
         {
-            public bool UpdateRealTimePrice(Subscription subscription, TimeZoneOffsetProvider timeZoneOffsetProvider)
+            public bool UpdateRealTimePrice(
+                Subscription subscription,
+                TimeZoneOffsetProvider timeZoneOffsetProvider,
+                SecurityExchangeHours exchangeHours)
             {
-                return SubscriptionShouldUpdateRealTimePrice(subscription, timeZoneOffsetProvider);
+                return UpdateSubscriptionRealTimePrice(subscription, timeZoneOffsetProvider, exchangeHours, new Tick());
             }
         }
 
