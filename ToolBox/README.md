@@ -17,7 +17,7 @@ Each tool requires a different set of parameters, the only **required argument i
 
 Help information is available using the '--help' parameter.
 
-Example: --app=GoogleDownloader --tickers=SPY,AAPL --resolution=Minute --from-date=yyyyMMdd-HH:mm:ss --to-date=yyyyMMdd-HH:mm:ss
+Example: --app=YahooDownloader --tickers=SPY,AAPL --resolution=Daily --from-date=yyyyMMdd-HH:mm:ss --to-date=yyyyMMdd-HH:mm:ss
 
 #### Available downloaders
 
@@ -27,7 +27,6 @@ Example: --app=GoogleDownloader --tickers=SPY,AAPL --resolution=Minute --from-da
 	- DukascopyDownloader or DDL
 	- FxcmDownloader or FDL
 	- FxcmVolumeDownload or FVDL
-	- GoogleDownloader or GDL
 	- IBDownloader or IBDL
 	- KrakenDownloader or KDL
 	- OandaDownloader or ODL
@@ -35,6 +34,7 @@ Example: --app=GoogleDownloader --tickers=SPY,AAPL --resolution=Minute --from-da
 	- YahooDownloader or YDL
 	- IEXDownloader or IEXDL
 	- BitfinexDownloader or BFXDL
+	- BinanceDownloader or MBXDL
 - **'--from-date=yyyyMMdd-HH:mm:ss'** required
 - **'--tickers=SPY,AAPL,etc'** required, except for QuandlBitfinexDownloader (QBDL)
 - **'--resolution=Tick/Second/Minute/Hour/Daily/All'** required, except for QuandlBitfinexDownloader (QBDL), CryptoiqDownloader (CDL). **Case sensitive. Not all downloaders support all resolutions**, send empty for more information.
@@ -47,6 +47,8 @@ Example: --app=GoogleDownloader --tickers=SPY,AAPL --resolution=Minute --from-da
 		- **'--date=yyyyMMdd'** reference date.
 	- AlgoSeekOptionsConverter or ASOC
 		- **'--date=yyyyMMdd'** reference date.
+	- CoinApiDataConverter or CADC
+		- **'--source-dir='** path to the raw CoinAPI data.
 	- IVolatilityEquityConverter or IVEC
 		- **'--source-dir='** source archived IVolatility data.
 		- **'--source-meta-dir='** source archived IVolatility meta data.

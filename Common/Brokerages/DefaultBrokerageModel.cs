@@ -42,8 +42,8 @@ namespace QuantConnect.Brokerages
             {SecurityType.Base, Market.USA},
             {SecurityType.Equity, Market.USA},
             {SecurityType.Option, Market.USA},
-            {SecurityType.Future, Market.USA},
-            {SecurityType.Forex, Market.FXCM},
+            {SecurityType.Future, Market.CME},
+            {SecurityType.Forex, Market.Oanda},
             {SecurityType.Cfd, Market.FXCM},
             {SecurityType.Crypto, Market.GDAX}
         }.ToReadOnlyDictionary();
@@ -300,7 +300,7 @@ namespace QuantConnect.Brokerages
                     model = new OptionMarginModel(RequiredFreeBuyingPowerPercent);
                     break;
                 case SecurityType.Future:
-                    model = new FutureMarginModel(RequiredFreeBuyingPowerPercent);
+                    model = new FutureMarginModel(RequiredFreeBuyingPowerPercent, security);
                     break;
                 default:
                     model = new SecurityMarginModel(leverage, RequiredFreeBuyingPowerPercent);

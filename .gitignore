@@ -34,6 +34,9 @@
 
 # QC Cloud Setup Bash Files
 *.sh
+# Include docker launch scripts for Mac/Linux
+!run_docker.sh
+!research/run_docker_notebook.sh
 
 # QC Config Files:
 # config.json
@@ -167,6 +170,9 @@ AutoTest.Net/
 # Installshield output folder
 [Ee]xpress/
 
+# JetBrains Rider
+.idea/
+
 # DocProject is a documentation generator add-in
 DocProject/buildhelp/
 DocProject/Help/*.HxT
@@ -260,3 +266,9 @@ QuantConnectProjects.xml
 Launcher/Plugins/*
 /ApiPython/dist
 /ApiPython/quantconnect.egg-info
+/ApiPython/quantconnect.egg-info/*
+
+QuantConnect.Lean.sln.DotSettings*
+
+#User notebook files
+Research/Notebooks

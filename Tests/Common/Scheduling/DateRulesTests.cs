@@ -25,7 +25,7 @@ using QuantConnect.Securities;
 
 namespace QuantConnect.Tests.Common.Scheduling
 {
-    [TestFixture]
+    [TestFixture, Parallelizable(ParallelScope.All)]
     public class DateRulesTests
     {
         [Test]
@@ -262,10 +262,12 @@ namespace QuantConnect.Tests.Common.Scheduling
                     config,
                     new Cash(Currencies.USD, 0, 1m),
                     SymbolProperties.GetDefault(Currencies.USD),
-                    ErrorCurrencyConverter.Instance
+                    ErrorCurrencyConverter.Instance,
+                    RegisteredSecurityDataTypesProvider.Null,
+                    new SecurityCache()
                 )
             );
-            var rules = new DateRules(manager);
+            var rules = new DateRules(manager, TimeZones.NewYork);
             return rules;
         }
     }

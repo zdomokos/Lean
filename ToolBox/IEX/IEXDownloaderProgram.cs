@@ -15,12 +15,9 @@
 
 using System;
 using System.Collections.Generic;
-using QuantConnect.Brokerages.InteractiveBrokers;
 using QuantConnect.Logging;
 using QuantConnect.Util;
 using QuantConnect.Configuration;
-using QuantConnect.Data.Market;
-using System.Linq;
 
 namespace QuantConnect.ToolBox.IEX
 {
@@ -38,6 +35,7 @@ namespace QuantConnect.ToolBox.IEX
                 Console.WriteLine("--resolution=Minute/Daily");
                 Environment.Exit(1);
             }
+
             try
             {
                 // Load settings from command line
@@ -68,7 +66,7 @@ namespace QuantConnect.ToolBox.IEX
             }
             catch (Exception err)
             {
-                Log.Error(err);       
+                Log.Error(err);
             }
             Console.ReadLine();
         }

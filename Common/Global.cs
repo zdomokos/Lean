@@ -19,6 +19,7 @@ using System.Runtime.Serialization;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Converters;
 using QuantConnect.Securities;
+using static QuantConnect.StringExtensions;
 
 namespace QuantConnect
 {
@@ -39,8 +40,14 @@ namespace QuantConnect
         public const string DB = "yyyy-MM-dd HH:mm:ss";
         /// QuantConnect UX Date Representation
         public const string UI = "yyyy-MM-dd HH:mm:ss";
+        /// en-US Short Date and Time Pattern
+        public const string USShort = "M/d/yy h:mm tt";
+        /// en-US Short Date Pattern
+        public const string USShortDateOnly = "M/d/yy";
         /// en-US format
         public const string US = "M/d/yyyy h:mm:ss tt";
+        /// en-US Date format
+        public const string USDateOnly = "M/d/yyyy";
         /// Date format of QC forex data
         public const string Forex = "yyyyMMdd HH:mm:ss.ffff";
         /// YYYYMM Year and Month Character Date Representation (used for futures)
@@ -63,21 +70,27 @@ namespace QuantConnect
         public string CurrencySymbol;
 
         /// Average Price of our Holding in the currency the symbol is traded in
+        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)]
         public decimal AveragePrice;
 
         /// Quantity of Symbol We Hold.
+        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)]
         public decimal Quantity;
 
         /// Current Market Price of the Asset in the currency the symbol is traded in
+        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)]
         public decimal MarketPrice;
 
         /// Current market conversion rate into the account currency
+        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)]
         public decimal? ConversionRate;
 
         /// Current market value of the holding
+        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)]
         public decimal MarketValue;
 
         /// Current unrealized P/L of the holding
+        [JsonProperty(DefaultValueHandling = DefaultValueHandling.Ignore)]
         public decimal UnrealizedPnL;
 
         /// Create a new default holding:
@@ -144,29 +157,17 @@ namespace QuantConnect
         /// </summary>
         public override string ToString()
         {
-            var value = string.Format("{0}: {1} @ {2}{3} - Market: {2}{4}", Symbol.Value, Quantity, CurrencySymbol, AveragePrice, MarketPrice);
+            var value = Invariant($"{Symbol.Value}: {Quantity} @ ") +
+                        Invariant($"{CurrencySymbol}{AveragePrice} - ") +
+                        Invariant($"Market: {CurrencySymbol}{MarketPrice}");
 
             if (ConversionRate != 1m)
             {
-                value += string.Format(" - Conversion: {0}", ConversionRate);
+                value += Invariant($" - Conversion: {ConversionRate}");
             }
 
             return value;
         }
-    }
-
-    /// <summary>
-    /// Processing runmode of the backtest.
-    /// </summary>
-    /// <obsolete>The runmode enum is now obsolete and all tasks are run in series mode. This was done to ensure algorithms have memory of the day before.</obsolete>
-    public enum RunMode
-    {
-        /// Automatically detect the runmode of the algorithm: series for minute data, parallel for second-tick
-        Automatic,
-        /// Series runmode for the algorithm
-        Series,
-        /// Parallel runmode for the algorithm
-        Parallel
     }
 
     /// <summary>
@@ -268,7 +269,6 @@ namespace QuantConnect
         /// </summary>
         Server2048
     }
-
 
     /// <summary>
     /// Type of tradable security / underlying asset
@@ -579,7 +579,12 @@ namespace QuantConnect
         /// <summary>
         /// The subscription's data comes from a rest call that is polled and returns a single line/data point of information
         /// </summary>
-        Rest
+        Rest,
+
+        /// <summary>
+        /// The subscription's data is streamed
+        /// </summary>
+        Streaming
     }
 
     /// <summary>

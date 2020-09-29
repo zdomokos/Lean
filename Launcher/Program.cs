@@ -16,12 +16,9 @@
 
 using System;
 using System.ComponentModel.Composition;
-using System.Diagnostics;
 using System.IO;
 using System.Threading;
-using System.Windows.Forms;
 using QuantConnect.Configuration;
-using QuantConnect.Interfaces;
 using QuantConnect.Lean.Engine;
 using QuantConnect.Logging;
 using QuantConnect.Packets;
@@ -37,7 +34,7 @@ namespace QuantConnect.Lean.Launcher
         {
             AppDomain.CurrentDomain.AssemblyLoad += (sender, e) =>
             {
-                if (e.LoadedAssembly.FullName.ToLower().Contains("python"))
+                if (e.LoadedAssembly.FullName.ToLowerInvariant().Contains("python"))
                 {
                     Log.Trace($"Python for .NET Assembly: {e.LoadedAssembly.GetName()}");
                 }
@@ -54,7 +51,7 @@ namespace QuantConnect.Lean.Launcher
 
             if (OS.IsWindows)
             {
-                Console.OutputEncoding = System.Text.Encoding.Unicode;
+                Console.OutputEncoding = System.Text.Encoding.UTF8;
             }
 
             // expect first argument to be config file name
@@ -66,6 +63,7 @@ namespace QuantConnect.Lean.Launcher
             var environment = Config.Get("environment");
             var liveMode = Config.GetBool("live-mode");
             Log.DebuggingEnabled = Config.GetBool("debug-mode");
+            Log.FilePath = Path.Combine(Config.Get("results-destination-folder"), "log.txt");
             Log.LogHandler = Composer.Instance.GetExportedValueByTypeName<ILogHandler>(Config.Get("log-handler", "CompositeLogHandler"));
 
             //Name thread for the profiler:
@@ -94,7 +92,9 @@ namespace QuantConnect.Lean.Launcher
 
             if (job == null)
             {
-                throw new Exception("Engine.Main(): Job was null.");
+                const string jobNullMessage = "Engine.Main(): Sorry we could not process this algorithm request.";
+                Log.Error(jobNullMessage);
+                throw new ArgumentException(jobNullMessage);
             }
 
             LeanEngineAlgorithmHandlers leanEngineAlgorithmHandlers;
@@ -106,17 +106,6 @@ namespace QuantConnect.Lean.Launcher
             {
                 Log.Error("Engine.Main(): Failed to load library: " + compositionException);
                 throw;
-            }
-
-            if (environment.EndsWith("-desktop"))
-            {
-                var info = new ProcessStartInfo
-                {
-                    UseShellExecute = false,
-                    FileName  = Config.Get("desktop-exe"),
-                    Arguments = Config.Get("desktop-http-port")
-                };
-                Process.Start(info);
             }
 
             // if the job version doesn't match this instance version then we can't process it
@@ -135,12 +124,12 @@ namespace QuantConnect.Lean.Launcher
 
             try
             {
-                var algorithmManager = new AlgorithmManager(liveMode);
+                var algorithmManager = new AlgorithmManager(liveMode, job);
 
                 leanEngineSystemHandlers.LeanManager.Initialize(leanEngineSystemHandlers, leanEngineAlgorithmHandlers, job, algorithmManager);
 
                 var engine = new Engine.Engine(leanEngineSystemHandlers, leanEngineAlgorithmHandlers, liveMode);
-                engine.Run(job, algorithmManager, assemblyPath);
+                engine.Run(job, algorithmManager, assemblyPath, WorkerThread.Instance);
             }
             finally
             {

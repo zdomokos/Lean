@@ -153,7 +153,7 @@ namespace QuantConnect.Algorithm.CSharp
             if (actual != expected)
             {
                 var symbol = security.Symbol;
-                throw new Exception(string.Format("{0}({1}) expected {2}, but received {3}.", symbol, symbol.ID, expected, actual));
+                throw new Exception($"{symbol}({symbol.ID}) expected {expected.ToStringInvariant()}, but received {actual.ToStringInvariant()}.");
             }
         }
 
@@ -173,24 +173,45 @@ namespace QuantConnect.Algorithm.CSharp
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
             {"Total Trades", "5"},
-            {"Average Win", "0.12%"},
+            {"Average Win", "0.64%"},
             {"Average Loss", "0%"},
-            {"Compounding Annual Return", "-90.790%"},
-            {"Drawdown", "11.100%"},
+            {"Compounding Annual Return", "-74.197%"},
+            {"Drawdown", "6.600%"},
             {"Expectancy", "0"},
-            {"Net Profit", "-11.096%"},
-            {"Sharpe Ratio", "-4.891"},
+            {"Net Profit", "-6.115%"},
+            {"Sharpe Ratio", "-2.281"},
+            {"Probabilistic Sharpe Ratio", "11.870%"},
             {"Loss Rate", "0%"},
             {"Win Rate", "100%"},
             {"Profit-Loss Ratio", "0"},
-            {"Alpha", "0.787"},
-            {"Beta", "-162.007"},
-            {"Annual Standard Deviation", "0.388"},
-            {"Annual Variance", "0.15"},
-            {"Information Ratio", "-4.932"},
-            {"Tracking Error", "0.388"},
-            {"Treynor Ratio", "0.012"},
-            {"Total Fees", "$5.00"}
+            {"Alpha", "-0.684"},
+            {"Beta", "-0.113"},
+            {"Annual Standard Deviation", "0.292"},
+            {"Annual Variance", "0.085"},
+            {"Information Ratio", "-1.606"},
+            {"Tracking Error", "0.312"},
+            {"Treynor Ratio", "5.866"},
+            {"Total Fees", "$5.00"},
+            {"Fitness Score", "0.017"},
+            {"Kelly Criterion Estimate", "0"},
+            {"Kelly Criterion Probability Value", "0"},
+            {"Sortino Ratio", "-2.584"},
+            {"Return Over Maximum Drawdown", "-11.287"},
+            {"Portfolio Turnover", "0.177"},
+            {"Total Insights Generated", "0"},
+            {"Total Insights Closed", "0"},
+            {"Total Insights Analysis Completed", "0"},
+            {"Long Insight Count", "0"},
+            {"Short Insight Count", "0"},
+            {"Long/Short Ratio", "100%"},
+            {"Estimated Monthly Alpha Value", "$0"},
+            {"Total Accumulated Estimated Alpha Value", "$0"},
+            {"Mean Population Estimated Insight Value", "$0"},
+            {"Mean Population Direction", "0%"},
+            {"Mean Population Magnitude", "0%"},
+            {"Rolling Averaged Population Direction", "0%"},
+            {"Rolling Averaged Population Magnitude", "0%"},
+            {"OrderListHash", "-1386253041"}
         };
     }
 }

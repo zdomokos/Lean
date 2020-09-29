@@ -17,6 +17,7 @@
 using System;
 using System.Diagnostics;
 using System.Linq;
+using System.Threading;
 using NUnit.Framework;
 using QuantConnect.Algorithm;
 using QuantConnect.Data;
@@ -27,7 +28,7 @@ using QuantConnect.Util;
 
 namespace QuantConnect.Tests.Engine.DataFeeds
 {
-    [TestFixture, Category("TravisExclude")]
+    [TestFixture, Category("TravisExclude"), Parallelizable(ParallelScope.All)]
     public class SubscriptionSynchronizerTests
     {
         [Test]
@@ -55,13 +56,19 @@ namespace QuantConnect.Tests.Engine.DataFeeds
                 algorithm.Portfolio.CashBook,
                 marketHoursDatabase,
                 symbolPropertiesDataBase,
-                algorithm);
+                algorithm,
+                RegisteredSecurityDataTypesProvider.Null,
+                new SecurityCacheProvider(algorithm.Portfolio));
             algorithm.Securities.SetSecurityService(securityService);
+            var dataPermissionManager = new DataPermissionManager();
             var dataManager = new DataManager(feed,
-                new UniverseSelection(algorithm, securityService),
+                new UniverseSelection(algorithm, securityService, dataPermissionManager, new DefaultDataProvider()),
                 algorithm,
                 algorithm.TimeKeeper,
-                marketHoursDatabase);
+                marketHoursDatabase,
+                false,
+                RegisteredSecurityDataTypesProvider.Null,
+                dataPermissionManager);
             algorithm.SubscriptionManager.SetDataManager(dataManager);
 
             algorithm.Initialize();
@@ -90,9 +97,6 @@ namespace QuantConnect.Tests.Engine.DataFeeds
                 totalDataPoints += dataPointCount;
             }
 
-            // force JIT
-            synchronizer.Sync(subscriptions);
-
             // log what we're doing
             Console.WriteLine($"Running {subscriptions.Count()} subscriptions with a total of {totalDataPoints} data points. Start: {algorithm.StartDate:yyyy-MM-dd} End: {algorithm.EndDate:yyyy-MM-dd}");
 
@@ -100,20 +104,24 @@ namespace QuantConnect.Tests.Engine.DataFeeds
             DateTime currentTime = DateTime.MaxValue;
             DateTime previousValue;
             var stopwatch = Stopwatch.StartNew();
+            var enumerator = synchronizer.Sync(subscriptions, CancellationToken.None).GetEnumerator();
             do
             {
                 previousValue = currentTime;
-                var timeSlice = synchronizer.Sync(subscriptions);
+                enumerator.MoveNext();
+                var timeSlice = enumerator.Current;
                 currentTime = timeSlice.Time;
                 count += timeSlice.DataPointCount;
             }
             while (currentTime != previousValue);
 
             stopwatch.Stop();
+            enumerator.DisposeSafely();
 
             var kps = count / 1000d / stopwatch.Elapsed.TotalSeconds;
             Console.WriteLine($"Current Time: {currentTime:u}  Elapsed time: {(int)stopwatch.Elapsed.TotalSeconds,4}s  KPS: {kps,7:.00}  COUNT: {count,10}");
             Assert.GreaterOrEqual(count, 100); // this assert is for sanity purpose
+            dataManager.RemoveAllSubscriptions();
         }
 
         private Subscription CreateSubscription(QCAlgorithm algorithm, Security security, DateTime startTimeUtc, DateTime endTimeUtc, out int dataPointCount)
@@ -128,7 +136,7 @@ namespace QuantConnect.Tests.Engine.DataFeeds
                 Time = time,
                 EndTime = time + config.Increment
             })
-            .Select(d => SubscriptionData.Create(config, security.Exchange.Hours, offsetProvider, d))
+            .Select(d => SubscriptionData.Create(config, security.Exchange.Hours, offsetProvider, d, config.DataNormalizationMode))
             .ToList();
 
             dataPointCount = data.Count;

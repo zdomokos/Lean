@@ -43,10 +43,12 @@ namespace QuantConnect.Lean.Engine.DataFeeds.Enumerators
         /// <param name="config">The <see cref="SubscriptionDataConfig"/></param>
         /// <param name="factorFile">The factor file to use</param>
         /// <param name="mapFile">The <see cref="MapFile"/> to use</param>
+        /// <param name="startTime">Start date for the data request</param>
         public void Initialize(
             SubscriptionDataConfig config,
             FactorFile factorFile,
-            MapFile mapFile)
+            MapFile mapFile,
+            DateTime startTime)
         {
             _config = config;
             // Estimate delisting date.
@@ -74,7 +76,10 @@ namespace QuantConnect.Lean.Engine.DataFeeds.Enumerators
         {
             if (_config.Symbol == eventArgs.Symbol)
             {
-                if (!_delistedWarning && eventArgs.Date >= _delistingDate)
+                // we send the delisting warning when we reach the delisting date, here we make sure we compare using the date component
+                // of the delisting date since for example some futures can trade a few hours in their delisting date, else we would skip on
+                // emitting the delisting warning, which triggers us to handle liquidation once delisted
+                if (!_delistedWarning && eventArgs.Date >= _delistingDate.Date)
                 {
                     _delistedWarning = true;
                     var price = eventArgs.LastBaseData?.Price ?? 0;

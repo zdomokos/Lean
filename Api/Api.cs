@@ -17,6 +17,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Net;
 using Newtonsoft.Json;
 using QuantConnect.API;
 using QuantConnect.Data.Market;
@@ -31,7 +32,7 @@ namespace QuantConnect.Api
     /// <summary>
     /// QuantConnect.com Interaction Via API.
     /// </summary>
-    public class Api : IApi
+    public class Api : IApi, IDownloadProvider
     {
         private string _dataFolder;
 
@@ -557,11 +558,11 @@ namespace QuantConnect.Api
             var request = new RestRequest("data/read", Method.GET);
 
             request.AddParameter("format", "link");
-            request.AddParameter("ticker", symbol.Value.ToLower());
+            request.AddParameter("ticker", symbol.Value.ToLowerInvariant());
             request.AddParameter("type", symbol.ID.SecurityType.ToLower());
             request.AddParameter("market", symbol.ID.Market);
             request.AddParameter("resolution", resolution);
-            request.AddParameter("date", date.ToString("yyyyMMdd"));
+            request.AddParameter("date", date.ToStringInvariant("yyyyMMdd"));
 
             Link result;
             ApiConnection.TryRequest(request, out result);
@@ -713,8 +714,8 @@ namespace QuantConnect.Api
         public List<Data.Market.Split> GetSplits(DateTime from, DateTime to)
         {
             var request = new RestRequest("splits", Method.POST);
-            request.AddParameter("from", from.ToString("yyyyMMdd"));
-            request.AddParameter("to", from.ToString("yyyyMMdd"));
+            request.AddParameter("from", from.ToStringInvariant("yyyyMMdd"));
+            request.AddParameter("to", from.ToStringInvariant("yyyyMMdd"));
 
             SplitList splits;
             ApiConnection.TryRequest(request, out splits);
@@ -737,8 +738,8 @@ namespace QuantConnect.Api
         public List<Data.Market.Dividend> GetDividends(DateTime from, DateTime to)
         {
             var request = new RestRequest("dividends", Method.POST);
-            request.AddParameter("from", from.ToString("yyyyMMdd"));
-            request.AddParameter("to", from.ToString("yyyyMMdd"));
+            request.AddParameter("from", from.ToStringInvariant("yyyyMMdd"));
+            request.AddParameter("to", from.ToStringInvariant("yyyyMMdd"));
 
             DividendList dividends;
             ApiConnection.TryRequest(request, out dividends);
@@ -751,16 +752,42 @@ namespace QuantConnect.Api
             ).ToList();
         }
 
+
+        /// <summary>
+        /// Local implementation for downloading data to algorithms
+        /// </summary>
+        /// <param name="address">URL to download</param>
+        /// <param name="headers">KVP headers</param>
+        /// <param name="userName">Username for basic authentication</param>
+        /// <param name="password">Password for basic authentication</param>
+        /// <returns></returns>
+        public virtual string Download(string address, IEnumerable<KeyValuePair<string, string>> headers, string userName, string password)
+        {
+            using (var client = new WebClient { Credentials = new NetworkCredential(userName, password) })
+            {
+                client.Proxy = WebRequest.GetSystemWebProxy();
+                if (headers != null)
+                {
+                    foreach (var header in headers)
+                    {
+                        client.Headers.Add(header.Key, header.Value);
+                    }
+                }
+                // Add a user agent header in case the requested URI contains a query.
+                client.Headers.Add("user-agent", "QCAlgorithm.Download(): User Agent Header");
+
+                return client.DownloadString(address);
+            }
+        }
+
         /// <summary>
         /// Performs application-defined tasks associated with freeing, releasing, or resetting unmanaged resources.
         /// </summary>
         /// <filterpriority>2</filterpriority>
-
         public virtual void Dispose()
         {
             // NOP
         }
-
 
         /// <summary>
         /// Generate a secure hash for the authorization headers.
@@ -770,8 +797,103 @@ namespace QuantConnect.Api
         {
             // Create a new hash using current UTC timestamp.
             // Hash must be generated fresh each time.
-            var data = string.Format("{0}:{1}", token, timestamp);
+            var data = $"{token}:{timestamp.ToStringInvariant()}";
             return data.ToSHA256();
+        }
+
+        /// <summary>
+        /// Create a new node in the organization, node configuration is defined by the
+        /// <see cref="SKU"/>
+        /// </summary>
+        /// <param name="name">The name of the new node</param>
+        /// <param name="organizationId">ID of the organization</param>
+        /// <param name="sku"><see cref="SKU"/> Object representing configuration</param>
+        /// <returns>Returns <see cref="CreatedNode"/> which contains API response and 
+        /// <see cref="Node"/></returns>
+        public CreatedNode CreateNode(string name, string organizationId, SKU sku)
+        {
+            var request = new RestRequest("nodes/create", Method.POST);
+            request.AddParameter("name", name);
+            request.AddParameter("organizationId", organizationId);
+            request.AddParameter("sku", sku.ToString());
+
+            CreatedNode result;
+            ApiConnection.TryRequest(request, out result);
+
+            return result;
+        }
+
+        /// <summary>
+        /// Reads the nodes associated with the organization, creating a 
+        /// <see cref="NodeList"/> for the response
+        /// </summary>
+        /// <param name="organizationId">ID of the organization</param>
+        /// <returns><see cref="NodeList"/> containing Backtest, Research, and Live Nodes</returns>
+        public NodeList ReadNodes(string organizationId)
+        {
+            var request = new RestRequest("nodes/read", Method.POST);
+            request.RequestFormat = DataFormat.Json;
+            request.AddParameter("organizationId", organizationId);
+
+            NodeList result;
+            ApiConnection.TryRequest(request, out result);
+            return result;
+        }
+
+        /// <summary>
+        /// Update an organizations node with a new name
+        /// </summary>
+        /// <param name="nodeId">The node ID of the node you want to update</param>
+        /// <param name="newName">The new name for that node</param>
+        /// <param name="organizationId">ID of the organization</param>
+        /// <returns><see cref="RestResponse"/> containing success response and errors</returns>
+        public RestResponse UpdateNode(string nodeId, string newName, string organizationId)
+        {
+            var request = new RestRequest("nodes/update", Method.POST);
+            request.RequestFormat = DataFormat.Json;
+            request.AddParameter("nodeId", nodeId);
+            request.AddParameter("name", newName);
+            request.AddParameter("organizationId", organizationId);
+
+            RestResponse result;
+            ApiConnection.TryRequest(request, out result);
+            return result;
+        }
+
+        /// <summary>
+        /// Delete a node from an organization, requires node ID.
+        /// </summary>
+        /// <param name="nodeId">The node ID of the node you want to delete</param>
+        /// <param name="organizationId">ID of the organization</param>
+        /// <returns><see cref="RestResponse"/> containing success response and errors</returns>
+        public RestResponse DeleteNode(string nodeId, string organizationId)
+        {
+            var request = new RestRequest("nodes/delete", Method.POST);
+            request.RequestFormat = DataFormat.Json;
+            request.AddParameter("nodeId", nodeId);
+            request.AddParameter("organizationId", organizationId);
+
+            RestResponse result;
+            ApiConnection.TryRequest(request, out result);
+            return result;
+        }
+
+        /// <summary>
+        /// Stop a running node in a organization
+        /// </summary>
+        /// <param name="nodeId">The node ID of the node you want to stop</param>
+        /// <param name="organizationId">ID of the organization</param>
+        /// <returns><see cref="RestResponse"/> containing success response and errors</returns>
+        public RestResponse StopNode(string nodeId, string organizationId)
+        {
+            var request = new RestRequest("nodes/stop", Method.POST);
+            request.RequestFormat = DataFormat.Json;
+            request.AddParameter("nodeId", nodeId);
+            request.AddParameter("organizationId", organizationId);
+
+            RestResponse result;
+            ApiConnection.TryRequest(request, out result);
+            return result;
         }
     }
 }

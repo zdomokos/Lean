@@ -74,14 +74,14 @@ namespace QuantConnect.Algorithm.CSharp
             };
         }
 
-        // sort the data by P/E ratio and take the top 'NumberOfSymbolsFine'
+        // sort the data by market capitalization and take the top 'NumberOfSymbolsFine'
         public IEnumerable<Symbol> FineSelectionFunction(IEnumerable<FineFundamental> fine)
         {
-            // sort descending by P/E ratio
-            var sortedByPeRatio = fine.OrderByDescending(x => x.ValuationRatios.PERatio);
+            // sort descending by market capitalization
+            var sortedByMarketCap = fine.OrderByDescending(x => x.MarketCap);
 
             // take the top entries from our sorted collection
-            var topFine = sortedByPeRatio.Take(NumberOfSymbolsFine);
+            var topFine = sortedByMarketCap.Take(NumberOfSymbolsFine);
 
             // we need to return only the symbol objects
             return topFine.Select(x => x.Symbol);
@@ -162,24 +162,45 @@ namespace QuantConnect.Algorithm.CSharp
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
             {"Total Trades", "2"},
-            {"Average Win", "0%"},
-            {"Average Loss", "-0.19%"},
-            {"Compounding Annual Return", "-4.314%"},
-            {"Drawdown", "1.300%"},
-            {"Expectancy", "-1"},
-            {"Net Profit", "-0.193%"},
-            {"Sharpe Ratio", "-0.625"},
-            {"Loss Rate", "100%"},
-            {"Win Rate", "0%"},
+            {"Average Win", "1.16%"},
+            {"Average Loss", "0%"},
+            {"Compounding Annual Return", "32.515%"},
+            {"Drawdown", "1.400%"},
+            {"Expectancy", "0"},
+            {"Net Profit", "1.164%"},
+            {"Sharpe Ratio", "2.857"},
+            {"Probabilistic Sharpe Ratio", "64.822%"},
+            {"Loss Rate", "0%"},
+            {"Win Rate", "100%"},
             {"Profit-Loss Ratio", "0"},
-            {"Alpha", "-0.515"},
-            {"Beta", "30.545"},
-            {"Annual Standard Deviation", "0.053"},
-            {"Annual Variance", "0.003"},
-            {"Information Ratio", "-0.922"},
-            {"Tracking Error", "0.053"},
-            {"Treynor Ratio", "-0.001"},
-            {"Total Fees", "$2.00"}
+            {"Alpha", "0.237"},
+            {"Beta", "-0.182"},
+            {"Annual Standard Deviation", "0.09"},
+            {"Annual Variance", "0.008"},
+            {"Information Ratio", "2.425"},
+            {"Tracking Error", "0.149"},
+            {"Treynor Ratio", "-1.405"},
+            {"Total Fees", "$2.00"},
+            {"Fitness Score", "0.076"},
+            {"Kelly Criterion Estimate", "0"},
+            {"Kelly Criterion Probability Value", "0"},
+            {"Sortino Ratio", "27.329"},
+            {"Return Over Maximum Drawdown", "24.003"},
+            {"Portfolio Turnover", "0.076"},
+            {"Total Insights Generated", "0"},
+            {"Total Insights Closed", "0"},
+            {"Total Insights Analysis Completed", "0"},
+            {"Long Insight Count", "0"},
+            {"Short Insight Count", "0"},
+            {"Long/Short Ratio", "100%"},
+            {"Estimated Monthly Alpha Value", "$0"},
+            {"Total Accumulated Estimated Alpha Value", "$0"},
+            {"Mean Population Estimated Insight Value", "$0"},
+            {"Mean Population Direction", "0%"},
+            {"Mean Population Magnitude", "0%"},
+            {"Rolling Averaged Population Direction", "0%"},
+            {"Rolling Averaged Population Magnitude", "0%"},
+            {"OrderListHash", "-1465929889"}
         };
     }
 }

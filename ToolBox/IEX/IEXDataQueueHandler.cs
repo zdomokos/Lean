@@ -16,6 +16,7 @@
 using System;
 using System.Collections.Generic;
 using QuantConnect.Data;
+using QuantConnect.Configuration;
 using QuantConnect.Packets;
 using Quobject.SocketIoClientDotNet.Client;
 using QuantConnect.Logging;
@@ -30,41 +31,70 @@ using System.Text;
 using QuantConnect.Interfaces;
 using NodaTime;
 using System.Globalization;
+using static QuantConnect.StringExtensions;
+using QuantConnect.Util;
+using CoinAPI.WebSocket.V1.DataModels;
+using System.Linq;
 
 namespace QuantConnect.ToolBox.IEX
 {
     /// <summary>
     /// IEX live data handler.
-    /// Data provided for free by IEX. See more at https://iextrading.com/api-exhibit-a
+    /// Data provided for free by IEX. See more at https://iextrading.com/developers/docs/#websockets
     /// </summary>
-    public class IEXDataQueueHandler : HistoryProviderBase, IDataQueueHandler, IDisposable
+    public class IEXDataQueueHandler : HistoryProviderBase, IDataQueueHandler
     {
         // using SocketIoClientDotNet is a temp solution until IEX implements standard WebSockets protocol
         private Socket _socket;
 
-        private ConcurrentDictionary<string, Symbol> _symbols = new ConcurrentDictionary<string, Symbol>(StringComparer.InvariantCultureIgnoreCase);
+        // only required for history requests to IEX Cloud
+        private readonly string _apiKey = Config.Get("iex-cloud-api-key");
+
+        private readonly ConcurrentDictionary<string, Symbol> _symbols = new ConcurrentDictionary<string, Symbol>(StringComparer.InvariantCultureIgnoreCase);
         private Manager _manager;
-        private CancellationTokenSource _cts = new CancellationTokenSource();
-        private static DateTime UnixEpoch = new DateTime(1970, 1, 1, 0, 0, 0, 0, System.DateTimeKind.Unspecified);
-        private TaskCompletionSource<bool> _connected = new TaskCompletionSource<bool>();
-        private Task _lastEmitTask;
+        private readonly CancellationTokenSource _cts = new CancellationTokenSource();
+        private static DateTime _unixEpoch = new DateTime(1970, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified);
+        private readonly TaskCompletionSource<bool> _connected = new TaskCompletionSource<bool>();
         private bool _subscribedToAll;
         private int _dataPointCount;
-
-        private BlockingCollection<BaseData> _outputCollection = new BlockingCollection<BaseData>();
+        private readonly IDataAggregator _aggregator = Composer.Instance.GetExportedValueByTypeName<IDataAggregator>(
+            Config.Get("data-aggregator", "QuantConnect.Lean.Engine.DataFeeds.AggregationManager"));
+        private readonly EventBasedDataQueueHandlerSubscriptionManager _subscriptionManager;
 
         public string Endpoint { get; internal set; }
 
-        public bool IsConnected
+        public bool IsConnected => _manager.ReadyState == Manager.ReadyStateEnum.OPEN;
+
+        public IEXDataQueueHandler() : this(true)
         {
-            get { return _manager.ReadyState == Manager.ReadyStateEnum.OPEN; }
         }
 
-        public IEXDataQueueHandler(bool live = true)
+        public IEXDataQueueHandler(bool live)
         {
+            _subscriptionManager = new EventBasedDataQueueHandlerSubscriptionManager();
+            _subscriptionManager.SubscribeImpl += (s, t) =>
+            {
+                Subscribe(s);
+                return true;
+            };
+
+            _subscriptionManager.UnsubscribeImpl += (s, t) =>
+            {
+                Unsubscribe(s);
+                return true;
+            };
+
             Endpoint = "https://ws-api.iextrading.com/1.0/tops";
+
+            if (string.IsNullOrWhiteSpace(_apiKey))
+            {
+                Log.Trace("IEXDataQueueHandler(): The IEX API key was not provided, history calls will return no data.");
+            }
+
             if (live)
+            {
                 Reconnect();
+            }
         }
 
         internal void Reconnect()
@@ -121,14 +151,14 @@ namespace QuantConnect.ToolBox.IEX
                 var lastSalePrice = message["lastSalePrice"].Value<decimal>();
                 var lastSaleSize = message["lastSaleSize"].Value<int>();
                 var lastSaleTime = message["lastSaleTime"].Value<long>();
-                var lastSaleDateTime = UnixEpoch.AddMilliseconds(lastSaleTime);
+                var lastSaleDateTime = _unixEpoch.AddMilliseconds(lastSaleTime);
                 var lastUpdated = message["lastUpdated"].Value<long>();
                 if (lastUpdated == -1)
                 {
                     // there were no trades on this day
                     return;
                 }
-                var lastUpdatedDatetime = UnixEpoch.AddMilliseconds(lastUpdated);
+                var lastUpdatedDatetime = _unixEpoch.AddMilliseconds(lastUpdated);
 
                 var tick = new Tick()
                 {
@@ -143,7 +173,8 @@ namespace QuantConnect.ToolBox.IEX
                     Value = lastSalePrice,
                     Quantity = lastSaleSize
                 };
-                _outputCollection.TryAdd(tick);
+
+                _aggregator.Update(tick);
             }
             catch (Exception err)
             {
@@ -153,18 +184,36 @@ namespace QuantConnect.ToolBox.IEX
         }
 
         /// <summary>
-        /// Desktop/Local doesn't support live data from this handler
+        /// Subscribe to the specified configuration
         /// </summary>
-        /// <returns>Tick</returns>
-        public IEnumerable<BaseData> GetNextTicks()
+        /// <param name="dataConfig">defines the parameters to subscribe to a data feed</param>
+        /// <param name="newDataAvailableHandler">handler to be fired on new data available</param>
+        /// <returns>The new enumerator for this subscription request</returns>
+        public IEnumerator<BaseData> Subscribe(SubscriptionDataConfig dataConfig, EventHandler newDataAvailableHandler)
         {
-            return _outputCollection.GetConsumingEnumerable();
+            if (dataConfig.SecurityType != SecurityType.Equity)
+            {
+                return Enumerable.Empty<BaseData>().GetEnumerator();
+            }
+
+            var enumerator = _aggregator.Add(dataConfig, newDataAvailableHandler);
+            _subscriptionManager.Subscribe(dataConfig);
+
+            return enumerator;
+        }
+
+        /// <summary>
+        /// Sets the job we're subscribing for
+        /// </summary>
+        /// <param name="job">Job we're subscribing for</param>
+        public void SetJob(LiveNodePacket job)
+        {
         }
 
         /// <summary>
         /// Subscribe to symbols
         /// </summary>
-        public void Subscribe(LiveNodePacket job, IEnumerable<Symbol> symbols)
+        public void Subscribe(IEnumerable<Symbol> symbols)
         {
             try
             {
@@ -172,7 +221,6 @@ namespace QuantConnect.ToolBox.IEX
                 foreach (var symbol in symbols)
                 {
                     // IEX only supports equities
-                    if (symbol.SecurityType != SecurityType.Equity) continue;
                     if (symbol.Value.Equals("firehose", StringComparison.InvariantCultureIgnoreCase))
                     {
                         _subscribedToAll = true;
@@ -185,7 +233,7 @@ namespace QuantConnect.ToolBox.IEX
                     }
                 }
                 var symbolsList = sb.ToString().TrimEnd(',');
-                if (!String.IsNullOrEmpty(symbolsList))
+                if (!string.IsNullOrEmpty(symbolsList))
                 {
                     SocketSafeAsyncEmit("subscribe", symbolsList);
                 }
@@ -196,11 +244,21 @@ namespace QuantConnect.ToolBox.IEX
             }
         }
 
+        /// <summary>
+        /// Removes the specified configuration
+        /// </summary>
+        /// <param name="dataConfig">Subscription config to be removed</param>
+        public void Unsubscribe(SubscriptionDataConfig dataConfig)
+        {
+            _subscriptionManager.Unsubscribe(dataConfig);
+            _aggregator.Remove(dataConfig);
+        }
+
 
         /// <summary>
         /// Unsubscribe from symbols
         /// </summary>
-        public void Unsubscribe(LiveNodePacket job, IEnumerable<Symbol> symbols)
+        public void Unsubscribe(IEnumerable<Symbol> symbols)
         {
             try
             {
@@ -219,7 +277,7 @@ namespace QuantConnect.ToolBox.IEX
                     }
                 }
                 var symbolsList = sb.ToString().TrimEnd(',');
-                if (!String.IsNullOrEmpty(symbolsList))
+                if (!string.IsNullOrEmpty(symbolsList))
                 {
                     SocketSafeAsyncEmit("unsubscribe", symbolsList);
                 }
@@ -286,7 +344,7 @@ namespace QuantConnect.ToolBox.IEX
 
         private void Dispose(bool disposing)
         {
-            _outputCollection.CompleteAdding();
+            _aggregator.DisposeSafely();
             _cts.Cancel();
             if (_socket != null)
             {
@@ -324,6 +382,12 @@ namespace QuantConnect.ToolBox.IEX
         /// <returns>An enumerable of the slices of data covering the span specified in each request</returns>
         public override IEnumerable<Slice> GetHistory(IEnumerable<Data.HistoryRequest> requests, DateTimeZone sliceTimeZone)
         {
+            if (string.IsNullOrWhiteSpace(_apiKey))
+            {
+                Log.Error("IEXDataQueueHandler.GetHistory(): History calls for IEX require an API key.");
+                yield break;
+            }
+
             foreach (var request in requests)
             {
                 foreach (var slice in ProcessHistoryRequests(request))
@@ -346,18 +410,23 @@ namespace QuantConnect.ToolBox.IEX
             {
                 Log.Error("IEXDataQueueHandler.GetHistory(): History calls with minute resolution for IEX available only for trailing 30 calendar days.");
                 yield break;
-            } else if (request.Resolution != Resolution.Daily && request.Resolution != Resolution.Minute)
+            }
+
+            if (request.Resolution != Resolution.Daily && request.Resolution != Resolution.Minute)
             {
                 Log.Error("IEXDataQueueHandler.GetHistory(): History calls for IEX only support daily & minute resolution.");
                 yield break;
             }
+
             if (start <= DateTime.Today.AddYears(-5))
             {
                 Log.Error("IEXDataQueueHandler.GetHistory(): History calls for IEX only support a maximum of 5 years history.");
                 yield break;
             }
 
-            Log.Trace(string.Format("IEXDataQueueHandler.ProcessHistoryRequests(): Submitting request: {0}-{1}: {2} {3}->{4}", request.Symbol.SecurityType, ticker, request.Resolution, start, end));
+            Log.Trace("IEXDataQueueHandler.ProcessHistoryRequests(): Submitting request: " +
+                Invariant($"{request.Symbol.SecurityType}-{ticker}: {request.Resolution} {start}->{end}")
+            );
 
             var span = end.Date - start.Date;
             var suffixes = new List<string>();
@@ -366,7 +435,7 @@ namespace QuantConnect.ToolBox.IEX
                 var begin = start;
                 while (begin < end)
                 {
-                    suffixes.Add("date/" + begin.ToString("yyyyMMdd"));
+                    suffixes.Add("date/" + begin.ToStringInvariant("yyyyMMdd"));
                     begin = begin.AddDays(1);
                 }
             }
@@ -374,7 +443,7 @@ namespace QuantConnect.ToolBox.IEX
             {
                 suffixes.Add("1m");
             }
-            else if (span.Days < 3*30)
+            else if (span.Days < 3 * 30)
             {
                 suffixes.Add("3m");
             }
@@ -396,46 +465,48 @@ namespace QuantConnect.ToolBox.IEX
             }
 
             // Download and parse data
-            var client = new System.Net.WebClient();
-            foreach (var suffix in suffixes)
+            using (var client = new System.Net.WebClient())
             {
-                var response = client.DownloadString("https://api.iextrading.com/1.0/stock/" + ticker + "/chart/" + suffix);
-                var parsedResponse = JArray.Parse(response);
-
-                foreach (var item in parsedResponse.Children())
+                foreach (var suffix in suffixes)
                 {
-                    DateTime date;
-                    if (item["minute"] != null)
+                    var response = client.DownloadString("https://cloud.iexapis.com/v1/stock/" + ticker + "/chart/" + suffix + "?token=" + _apiKey);
+                    var parsedResponse = JArray.Parse(response);
+
+                    foreach (var item in parsedResponse.Children())
                     {
-                        date = DateTime.ParseExact(item["date"].Value<string>(), "yyyyMMdd", CultureInfo.InvariantCulture);
-                        var mins = TimeSpan.ParseExact(item["minute"].Value<string>(), "hh\\:mm", CultureInfo.InvariantCulture);
-                        date += mins;
+                        DateTime date;
+                        if (item["minute"] != null)
+                        {
+                            date = DateTime.ParseExact(item["date"].Value<string>(), "yyyy-MM-dd", CultureInfo.InvariantCulture);
+                            var mins = TimeSpan.ParseExact(item["minute"].Value<string>(), "hh\\:mm", CultureInfo.InvariantCulture);
+                            date += mins;
+                        }
+                        else
+                        {
+                            date = Parse.DateTime(item["date"].Value<string>());
+                        }
+
+                        if (date.Date < start.Date || date.Date > end.Date)
+                        {
+                            continue;
+                        }
+
+                        Interlocked.Increment(ref _dataPointCount);
+
+                        if (item["open"].Type == JTokenType.Null)
+                        {
+                            continue;
+                        }
+                        var open = item["open"].Value<decimal>();
+                        var high = item["high"].Value<decimal>();
+                        var low = item["low"].Value<decimal>();
+                        var close = item["close"].Value<decimal>();
+                        var volume = item["volume"].Value<int>();
+
+                        var tradeBar = new TradeBar(date, request.Symbol, open, high, low, close, volume);
+
+                        yield return new Slice(tradeBar.EndTime, new[] {tradeBar});
                     }
-                    else
-                    {
-                        date = DateTime.Parse(item["date"].Value<string>());
-                    }
-
-                    if (date.Date < start.Date || date.Date > end.Date)
-                    {
-                        continue;
-                    }
-
-                    Interlocked.Increment(ref _dataPointCount);
-
-                    if (item["open"] == null)
-                    {
-                        continue;
-                    }
-                    var open = item["open"].Value<decimal>();
-                    var high = item["high"].Value<decimal>();
-                    var low = item["low"].Value<decimal>();
-                    var close = item["close"].Value<decimal>();
-                    var volume = item["volume"].Value<int>();
-
-                    TradeBar tradeBar = new TradeBar(date, request.Symbol, open, high, low, close, volume);
-
-                    yield return new Slice(tradeBar.EndTime, new[] { tradeBar });
                 }
             }
         }

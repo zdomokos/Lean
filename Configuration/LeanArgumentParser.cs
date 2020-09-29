@@ -30,7 +30,8 @@ namespace QuantConnect.Configuration
         private static readonly List<CommandLineOption> Options = new List<CommandLineOption>
             {
                 new CommandLineOption("config", CommandOptionType.SingleValue),
-                new CommandLineOption("output", CommandOptionType.SingleValue),
+                new CommandLineOption("results-destination-folder", CommandOptionType.SingleValue),
+                new CommandLineOption("algorithm-id", CommandOptionType.SingleValue),
 
                 // Options grabbed from json file
                 new CommandLineOption("environment", CommandOptionType.SingleValue),
@@ -44,7 +45,7 @@ namespace QuantConnect.Configuration
                 //Physical DLL location
                 new CommandLineOption("algorithm-location", CommandOptionType.SingleValue),
 
-                //Jupyter notebook
+                //Research notebook
                 new CommandLineOption("composer-dll-directory", CommandOptionType.SingleValue),
 
                 // engine
@@ -87,10 +88,8 @@ namespace QuantConnect.Configuration
                 new CommandLineOption("ib-host", CommandOptionType.SingleValue),
                 new CommandLineOption("ib-port", CommandOptionType.SingleValue),
                 new CommandLineOption("ib-agent-description", CommandOptionType.SingleValue),
-                new CommandLineOption("ib-use-tws", CommandOptionType.NoValue),
                 new CommandLineOption("ib-tws-dir", CommandOptionType.SingleValue),
                 new CommandLineOption("ib-trading-mode", CommandOptionType.SingleValue),
-                new CommandLineOption("ib-controller-dir", CommandOptionType.SingleValue),
 
                 // tradier configuration
                 new CommandLineOption("tradier-account-id", CommandOptionType.SingleValue),

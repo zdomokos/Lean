@@ -15,17 +15,21 @@
 */
 
 using System;
+using ProtoBuf;
+using static QuantConnect.StringExtensions;
 
 namespace QuantConnect.Data.Market
 {
     /// <summary>
     /// Dividend event from a security
     /// </summary>
+    [ProtoContract(SkipConstructor = true)]
     public class Dividend : BaseData
     {
         /// <summary>
         /// Gets the dividend payment
         /// </summary>
+        [ProtoMember(10)]
         public decimal Distribution
         {
             get { return Value; }
@@ -36,6 +40,7 @@ namespace QuantConnect.Data.Market
         /// Gets the price at which the dividend occurred.
         /// This is typically the previous day's closing price
         /// </summary>
+        [ProtoMember(11)]
         public decimal ReferencePrice
         {
             get;
@@ -146,7 +151,7 @@ namespace QuantConnect.Data.Market
         /// <returns>string - a string formatted as SPY: 167.753</returns>
         public override string ToString()
         {
-            return $"Dividend: {Symbol}: {Distribution} | {ReferencePrice}";
+            return Invariant($"Dividend: {Symbol}: {Distribution} | {ReferencePrice}");
         }
     }
 }
